@@ -1,0 +1,11 @@
+# ignore execute file
+tcpeek
+# ignore object files
+*.o
+# ignore autotools files
+.deps/
+Makefile
+config.h
+config.log
+config.status
+stamp-h1
