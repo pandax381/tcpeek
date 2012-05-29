@@ -43,6 +43,7 @@ enum {
 	TCPEEK_TCP_SYN_RECV,
 	TCPEEK_TCP_FIN_WAIT1,
 	TCPEEK_TCP_FIN_WAIT2,
+	TCPEEK_TCP_FIN_WAIT1_TO_TIME_WAIT,
 	TCPEEK_TCP_TIME_WAIT,
 	TCPEEK_TCP_CLOSED,
 	TCPEEK_TCP_CLOSE_WAIT,
@@ -67,21 +68,35 @@ struct {
 	struct {
 		pthread_mutex_t mutex;
 		struct hashtable *table;
+		struct timeval timestamp;
+	} session;
+	struct {
+		struct {
+			uint32_t cap;
+			uint32_t tcp;
+			uint32_t oos;
+			uint32_t err;
+		} packet;
 		struct {
 			uint32_t total;
 			uint32_t active;
 			uint32_t max;
 			uint32_t timeout;
-			struct timeval lifetime_total;
-			struct timeval lifetime_avg;
-			struct timeval lifetime_max;
-			uint32_t retrans_session;
-			uint32_t retrans_syn;
-			uint32_t retrans_synack;
-			uint32_t retrans_retrans;
-		} stat;
-		struct timeval timestamp;
-	} session;
+		} session;
+		struct {
+			struct timeval total;
+			struct timeval avg;
+			struct timeval max;
+		} lifetime;
+		struct {
+			uint32_t total;
+			uint32_t err;
+			uint32_t dupsyn;
+			uint32_t dupsynack;
+			uint32_t dupack;
+			uint32_t retrans;
+		} segment;
+	} stat;
 	int terminate;
 } g;
 
@@ -95,44 +110,26 @@ struct tcpeek_session {
 	struct {
 		uint32_t fseq[2];
 		uint32_t lseq[2];
+		uint32_t nseq[2];
+		uint32_t mseq[2];
 		uint32_t fack[2];
 		uint32_t lack[2];
+		uint32_t mack[2];
 		uint16_t rwin[2];
 		uint8_t state[2];
 		struct timeval timestamp[2];
 		struct lnklist *segments[2];
 	} sequence;
 	struct {
-		uint32_t syn;
-		uint32_t synack;
+		uint32_t dupsyn;
+		uint32_t dupsynack;
+		uint32_t dupack;
 		uint32_t retrans;
 		uint32_t rst;
 		uint32_t err;
 		uint32_t timeout;
 	} stat;
 };
-/*
-struct tcpeek_session {
-	struct tcpeek_session_key key;
-	uint32_t fseq[2];
-	uint32_t lseq[2];
-	uint32_t fack[2];
-	uint32_t lack[2];
-	uint16_t rwin[2];
-	uint8_t state[2];
-	struct timeval firsttime;
-	struct timeval lasttime;
-	struct {
-		uint32_t syn;
-		uint32_t synack;
-		uint32_t retrans;
-		uint32_t rst;
-		uint32_t err;
-	} count;
-	int timeout;
-	struct lnklist *segments[2];
-};
-*/
 
 struct tcpeek_segment_datalink {
 	union {
@@ -176,6 +173,8 @@ extern uint8_t *
 tcpeek_disassemble(const uint8_t *data, uint16_t size, int datalink, struct tcpeek_segment *dst);
 
 // session.c
+extern void
+tcpeek_session_destroy(struct tcpeek_session *session);
 extern struct tcpeek_session *
 tcpeek_session_get(struct tcpeek_segment *segment);
 extern struct tcpeek_session *
@@ -204,6 +203,8 @@ extern int
 tcpeek_session_recv_finack(struct tcpeek_session *session, struct tcpeek_segment *segment);
 extern int
 tcpeek_session_recv_rst(struct tcpeek_session *session, struct tcpeek_segment *segment);
+extern int
+tcpeek_session_recv_isdupack(struct tcpeek_session *session, struct tcpeek_segment *segment);
 extern int
 tcpeek_session_recv_isretransmit(struct tcpeek_session *session, struct tcpeek_segment *segment);
 extern void
