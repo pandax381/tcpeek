@@ -5,16 +5,8 @@ tcpeek_session_destroy(struct tcpeek_session *session) {
 	if (!session) {
 		return;
 	}
-	lnklist_iter_init(session->sequence.segments[0]);
-	while (lnklist_iter_hasnext(session->sequence.segments[0])) {
-		free(lnklist_iter_remove_next(session->sequence.segments[0]));
-	}
-	lnklist_destroy(session->sequence.segments[0]);
-	lnklist_iter_init(session->sequence.segments[1]);
-	while (lnklist_iter_hasnext(session->sequence.segments[1])) {
-		free(lnklist_iter_remove_next(session->sequence.segments[1]));
-	}
-	lnklist_destroy(session->sequence.segments[1]);
+	lnklist_destroy_with_destructor(session->sequence.segments[0], free);
+	lnklist_destroy_with_destructor(session->sequence.segments[1], free);
 	hashtable_remove(g.session.table, &session->key, sizeof(session->key));
 	free(session);
 }
@@ -183,6 +175,7 @@ tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *s
 int
 tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.state[self] == TCPEEK_TCP_CLOSED) { // passive open
@@ -200,8 +193,7 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 		session->counter.dupsynack++;
 	}
 	else {
-		char msg[128];
-		snprintf(msg, sizeof(msg), "tcpeek_session_recv_synack: %d/%d", session->sequence.state[self], session->sequence.state[peer]);
+		snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
 		tcpeek_print_segment(segment, self, msg);
 		return -1;
 	}
@@ -211,6 +203,7 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 int
 tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.lseq[self] > ntohl(segment->tcp.hdr.th_seq)) {
@@ -241,8 +234,8 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 			}
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_ack");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -254,8 +247,8 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 			session->sequence.state[self] = TCPEEK_TCP_CLOSING;
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_ack");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -273,8 +266,8 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 			session->sequence.state[peer] = TCPEEK_TCP_CLOSED;
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_ack");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -284,8 +277,8 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 			session->sequence.state[peer] = TCPEEK_TCP_TIME_WAIT;
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_ack");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -299,14 +292,14 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 			}
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_ack");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
 	else {
-		tcpeek_print_segment(segment, self, "tcpeek_session_recv_ack");
-		fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+		snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+		tcpeek_print_segment(segment, self, msg);
 		return -1;
 	}
 	session->sequence.lseq[self] = ntohl(segment->tcp.hdr.th_seq);
@@ -320,6 +313,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 int
 tcpeek_session_recv_fin(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.state[self] == TCPEEK_TCP_SYN_RECV) {
@@ -333,8 +327,8 @@ tcpeek_session_recv_fin(struct tcpeek_session *session, struct tcpeek_segment *s
 			session->sequence.state[self] = TCPEEK_TCP_FIN_WAIT1;
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_fin");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -343,14 +337,14 @@ tcpeek_session_recv_fin(struct tcpeek_session *session, struct tcpeek_segment *s
 			session->sequence.state[self] = TCPEEK_TCP_LAST_ACK;
 		}
 		else {
-			tcpeek_print_segment(segment, self, "tcpeek_session_recv_fin");
-			fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
 	else {
-		tcpeek_print_segment(segment, self, "tcpeek_session_recv_fin");
-		fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+		snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+		tcpeek_print_segment(segment, self, msg);
 		return -1;
 	}
 	session->sequence.lseq[self] = ntohl(segment->tcp.hdr.th_seq);
@@ -361,6 +355,7 @@ tcpeek_session_recv_fin(struct tcpeek_session *session, struct tcpeek_segment *s
 int
 tcpeek_session_recv_finack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.state[self] == TCPEEK_TCP_SYN_RECV) {
@@ -380,8 +375,8 @@ tcpeek_session_recv_finack(struct tcpeek_session *session, struct tcpeek_segment
 			}
 		}
 		else {
-			//tcpeek_print_segment(segment, self, "tcpeek_session_recv_finack");
-			//fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -394,8 +389,8 @@ tcpeek_session_recv_finack(struct tcpeek_session *session, struct tcpeek_segment
 			session->sequence.state[peer] = TCPEEK_TCP_TIME_WAIT;
 		}
 		else {
-			//tcpeek_print_segment(segment, self, "tcpeek_session_recv_finack");
-			//fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -405,8 +400,8 @@ tcpeek_session_recv_finack(struct tcpeek_session *session, struct tcpeek_segment
 			session->sequence.state[peer] = TCPEEK_TCP_CLOSED;
 		}
 		else {
-			//tcpeek_print_segment(segment, self, "tcpeek_session_recv_finack");
-			//fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
@@ -415,14 +410,14 @@ tcpeek_session_recv_finack(struct tcpeek_session *session, struct tcpeek_segment
 			session->sequence.state[self] = TCPEEK_TCP_LAST_ACK;
 		}
 		else {
-			//tcpeek_print_segment(segment, self, "tcpeek_session_recv_finack");
-			//fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+			snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+			tcpeek_print_segment(segment, self, msg);
 			return -1;
 		}
 	}
 	else {
-		//tcpeek_print_segment(segment, self, "tcpeek_session_recv_finack");
-		//fprintf(stderr, "self: %d, peer: %d\n", session->sequence.state[self], session->sequence.state[peer]);
+		snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
+		tcpeek_print_segment(segment, self, msg);
 		return -1;
 	}
 	session->sequence.lseq[self] = ntohl(segment->tcp.hdr.th_seq);
