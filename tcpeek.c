@@ -43,6 +43,9 @@ tcpeek_execute(void) {
 	int err, ready;
 	pthread_t checker, listener;
 	struct pollfd pfds[1];
+	struct lnklist *keys;
+	struct hashtable_key *key;
+	struct tcpeek_session *session;
 
 	err = pthread_create(&checker, NULL, tcpeek_checker_thread, NULL);
 	if(err) {
@@ -80,10 +83,8 @@ tcpeek_execute(void) {
 			}
 		}
 	}
-	struct lnklist *keys;
-	struct hashtable_key *key;
-	struct tcpeek_session *session;
-	pthread_mutex_lock(&g.session.mutex);
+	pthread_join(checker, NULL);
+	pthread_join(listener, NULL);
 	keys = hashtable_get_keys(g.session.table);
 	lnklist_iter_init(keys);
 	while(lnklist_iter_hasnext(keys)) {
@@ -91,8 +92,8 @@ tcpeek_execute(void) {
 		session = hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key));
 		tcpeek_session_cancel(session);
 	}
+	lnklist_destroy(keys);
 	tcpeek_print_summary();
-	pthread_mutex_unlock(&g.session.mutex);
 }
 
 static void
@@ -167,11 +168,7 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 void
 tcpeek_terminate(int status) {
 	if(g.option.expression) {
-		lnklist_iter_init(g.option.expression);
-		while(lnklist_iter_hasnext(g.option.expression)) {
-			free(lnklist_iter_remove_next(g.option.expression));
-		}
-		lnklist_destroy(g.option.expression);
+		lnklist_destroy_with_destructor(g.option.expression, free);
 	}
 	if(g.pcap.pcap) {
 		pcap_close(g.pcap.pcap);
@@ -180,18 +177,10 @@ tcpeek_terminate(int status) {
 		tcpeek_terminate_session();
 	}
 	if(g.stat) {
-		lnklist_iter_init(g.stat);
-		while(lnklist_iter_hasnext(g.stat)) {
-			tcpeek_stat_destroy(lnklist_iter_remove_next(g.stat));
-		}
-		lnklist_destroy(g.stat);
+		lnklist_destroy_with_destructor(g.stat, (void (*)(void *))tcpeek_stat_destroy);
 	}
 	if(g.filter) {
-		lnklist_iter_init(g.filter);
-		while(lnklist_iter_hasnext(g.filter)) {
-			tcpeek_filter_destroy(lnklist_iter_remove_next(g.filter));
-		}
-		lnklist_destroy(g.filter);
+		lnklist_destroy_with_destructor(g.filter, (void (*)(void *))tcpeek_filter_destroy);
 	}
 	closelog();
 	exit(status);

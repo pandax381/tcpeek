@@ -22,11 +22,7 @@ tcpeek_filter_create(void) {
 void
 tcpeek_filter_destroy(struct tcpeek_filter *filter) {
 	if(filter) {
-		lnklist_iter_init(filter->rule);
-		while(lnklist_iter_hasnext(filter->rule)) {
-			tcpeek_filter_rule_destroy(lnklist_iter_remove_next(filter->rule));
-		}
-		lnklist_destroy(filter->rule);
+		lnklist_destroy_with_destructor(filter->rule, (void (*)(void *))tcpeek_filter_rule_destroy);
 		free(filter);
 	}
 }
@@ -50,11 +46,8 @@ tcpeek_filter_rule_create(void) {
 void
 tcpeek_filter_rule_destroy(struct tcpeek_filter_rule *rule) {
 	if(rule) {
-		lnklist_iter_init(rule->port);
-		while(lnklist_iter_hasnext(rule->port)) {
-			free(lnklist_iter_remove_next(rule->port));
-		}
-		free(rule->port);
+		lnklist_destroy_with_destructor(rule->port, free);
+		free(rule);
 	}
 }
 
@@ -85,7 +78,7 @@ tcpeek_filter_parse(struct tcpeek_filter *filter, const char *expression) {
 	sp = ep + 1; 
 	list = strsplit(sp, ",", 0);
 	if(lnklist_size(list) < 1) {
-		lnklist_destroy(list);
+		lnklist_destroy_with_destructor(list, free);
 		return -1;
 	} 
 	lnklist_iter_init(list);
@@ -93,16 +86,16 @@ tcpeek_filter_parse(struct tcpeek_filter *filter, const char *expression) {
 		rule = tcpeek_filter_rule_create();
 		if(tcpeek_filter_parse_rule(rule, lnklist_iter_next(list)) == -1) {
 			tcpeek_filter_rule_destroy(rule);
-			lnklist_destroy(list);
+			lnklist_destroy_with_destructor(list, free);
 			return -1;
 		}
 		if(!lnklist_add_tail(filter->rule, rule)) {
 			tcpeek_filter_rule_destroy(rule);
-			lnklist_destroy(list);
+			lnklist_destroy_with_destructor(list, free);
 			return -1;
 		}
 	}
-	lnklist_destroy(list);
+	lnklist_destroy_with_destructor(list, free);
 	return 0;
 }
 
@@ -124,7 +117,7 @@ tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression
 	}
 	else {
 		if(inet_pton(AF_INET, addr, &rule->addr) != 1) {
-			lnklist_destroy(list);
+			lnklist_destroy_with_destructor(list, free);
 			return -1;
 		}
 	}
@@ -135,17 +128,17 @@ tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression
 		}
 		else {
 			if(strisdigit(port) == 0) {
-				lnklist_destroy(list);
+				lnklist_destroy_with_destructor(list, free);
 				return -1;
 			}
 			portno = htons((uint16_t)strtol(port, NULL, 10));
 		}
 		if(!lnklist_add_tail(rule->port, memdup(&portno, sizeof(portno)))) {
-			lnklist_destroy(list);
+			lnklist_destroy_with_destructor(list, free);
 			return -1;
 		}
 	}
-	lnklist_destroy(list);
+	lnklist_destroy_with_destructor(list, free);
 	return 0;
 }
 

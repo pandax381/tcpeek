@@ -115,13 +115,11 @@ tcpeek_init_signal(void) {
 		tcpeek_terminate(1);
 		// does not reached.
 	}
-/*
 	if(sigaction(SIGUSR2, &sig, NULL) == -1){
 		fprintf(stderr, "%s: sigaction error SIGUSR2\n", __func__);
 		tcpeek_terminate(1);
 		// does not reached.
 	}
-*/
 	if(sigaction(SIGALRM, &sig, NULL) == -1){
 		fprintf(stderr, "%s: sigaction error SIGALRM\n", __func__);
 		tcpeek_terminate(1);
@@ -171,16 +169,6 @@ tcpeek_init_filter_and_stat(void) {
 	struct tcpeek_filter *filter;
 	char *expression;
 
-	if(!(g.stat = lnklist_create())) {
-		syslog(LOG_ERR, "%s: [error] alloc error.", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
-	if(!(g.filter = lnklist_create())) {
-		syslog(LOG_ERR, "%s: [error] alloc error.", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
 	lnklist_iter_init(g.option.expression);
 	while(lnklist_iter_hasnext(g.option.expression)) {
 		expression = lnklist_iter_next(g.option.expression);
@@ -238,6 +226,7 @@ tcpeek_init_pcap(void) {
 		tcpeek_terminate(1);
 		// does not reached.
 	}
+	pcap_freecode(&bpf);
 	g.pcap.snapshot = pcap_snapshot(g.pcap.pcap);
 	g.pcap.datalink = pcap_datalink(g.pcap.pcap);
 	if(g.pcap.datalink != DLT_EN10MB && g.pcap.datalink != DLT_LINUX_SLL) {

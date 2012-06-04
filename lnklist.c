@@ -69,9 +69,19 @@ lnklist_create(void) {
 
 void
 lnklist_destroy(struct lnklist *obj) {
+	lnklist_destroy_with_destructor(obj, NULL);
+}
+
+void
+lnklist_destroy_with_destructor(struct lnklist *obj, void (*destructor)(void *)) {
+	/*
 	lnklist_iter_init(obj);
 	while(lnklist_iter_hasnext(obj)) {
-		lnklist_iter_remove_next(obj);
+		destructor ? destructor(lnklist_iter_remove_next(obj)) : lnklist_iter_remove_next(obj);
+	}
+	*/
+	while(lnklist_size(obj) > 0) {
+		destructor ? destructor(lnklist_remove(obj, 0)) : lnklist_remove(obj, 0);
 	}
 	free(obj);
 }

@@ -10,6 +10,8 @@ extern struct lnklist *
 lnklist_create(void);
 extern void
 lnklist_destroy(struct lnklist *obj);
+void
+lnklist_destroy_with_destructor(struct lnklist *obj, void (*destructor)(void *));
 extern ssize_t
 lnklist_size(struct lnklist *obj);
 extern void *
