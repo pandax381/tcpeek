@@ -80,7 +80,19 @@ tcpeek_execute(void) {
 			}
 		}
 	}
+	struct lnklist *keys;
+	struct hashtable_key *key;
+	struct tcpeek_session *session;
+	pthread_mutex_lock(&g.session.mutex);
+	keys = hashtable_get_keys(g.session.table);
+	lnklist_iter_init(keys);
+	while(lnklist_iter_hasnext(keys)) {
+		key = lnklist_iter_next(keys);
+		session = hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key));
+		tcpeek_session_cancel(session);
+	}
 	tcpeek_print_summary();
+	pthread_mutex_unlock(&g.session.mutex);
 }
 
 static void
@@ -88,27 +100,29 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	struct tcpeek_segment segment;
 	uint8_t *payload;
 	struct tcpeek_session *session;
+	struct tcpeek_filter *filter;
 	int err;
 
-	g.stat.packet.cap++;
 	memset(&segment, 0x00, sizeof(segment));
 	segment.timestamp = pkthdr->ts;
 	payload = tcpeek_disassemble((uint8_t *)pktdata, (uint16_t)pkthdr->caplen, g.pcap.datalink, &segment);
 	if(!payload) {
 		return;
 	}
-	g.stat.packet.tcp++;
 	pthread_mutex_lock(&g.session.mutex);
 	session = tcpeek_session_get(&segment);
 	if(!session) {
 		if(segment.tcp.hdr.th_flags != TH_SYN) {
-			g.stat.packet.oos++;
 			pthread_mutex_unlock(&g.session.mutex);
 			return;
 		}
-		session = tcpeek_session_open(&segment);
+		filter = tcpeek_filter_lookup(&segment);
+		if(!filter) {
+			pthread_mutex_unlock(&g.session.mutex);
+			return;
+		}
+		session = tcpeek_session_open(&segment, filter->stat);
 		if(!session) {
-			g.stat.packet.err++;
 			syslog(LOG_WARNING, "%s: [warning] %s\n", __func__, "session add error.");
 			pthread_mutex_unlock(&g.session.mutex);
 			return;
@@ -142,7 +156,7 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	}
 	tcpeek_session_add_segment(session, &segment);
 	if(err) {
-		session->stat.err++;
+		session->counter.err++;
 	}
 	if (tcpeek_session_isclosed(session)) {
 		tcpeek_session_close(session);
@@ -152,12 +166,32 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 
 void
 tcpeek_terminate(int status) {
+	if(g.option.expression) {
+		lnklist_iter_init(g.option.expression);
+		while(lnklist_iter_hasnext(g.option.expression)) {
+			free(lnklist_iter_remove_next(g.option.expression));
+		}
+		lnklist_destroy(g.option.expression);
+	}
 	if(g.pcap.pcap) {
 		pcap_close(g.pcap.pcap);
-		g.pcap.pcap = NULL;
 	}
 	if(g.session.table) {
 		tcpeek_terminate_session();
+	}
+	if(g.stat) {
+		lnklist_iter_init(g.stat);
+		while(lnklist_iter_hasnext(g.stat)) {
+			tcpeek_stat_destroy(lnklist_iter_remove_next(g.stat));
+		}
+		lnklist_destroy(g.stat);
+	}
+	if(g.filter) {
+		lnklist_iter_init(g.filter);
+		while(lnklist_iter_hasnext(g.filter)) {
+			tcpeek_filter_destroy(lnklist_iter_remove_next(g.filter));
+		}
+		lnklist_destroy(g.filter);
 	}
 	closelog();
 	exit(status);
@@ -168,14 +202,12 @@ static void
 tcpeek_terminate_session(void) {
 	struct lnklist *keys;
 	struct hashtable_key *key;
-	struct tcpeek_session *session;
 
 	keys = hashtable_get_keys(g.session.table);
 	lnklist_iter_init(keys);
 	while(lnklist_iter_hasnext(keys)) {
 		key = lnklist_iter_remove_next(keys);
-		session = hashtable_remove(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key));
-		tcpeek_session_destroy(session);
+		tcpeek_session_destroy(hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key)));
 	}
 	lnklist_destroy(keys);
 	hashtable_destroy(g.session.table);
@@ -196,43 +228,55 @@ tcpeek_print_summary(void) {
 	struct timeval now, difftime;
 	struct tm tm;
 	char from[128], to[128];
+	struct tcpeek_filter *filter;
+	struct tcpeek_stat *stat;
 	uint64_t tmp;
 
 	gettimeofday(&now, NULL);
 	strftime(from, sizeof(from), "%Y-%m-%d %T", localtime_r(&g.session.timestamp.tv_sec, &tm));
 	strftime(to, sizeof(to), "%Y-%m-%d %T", localtime_r(&now.tv_sec, &tm));
-	if(g.stat.session.total - g.stat.session.active - g.stat.session.timeout > 0) {
-		tmp = (g.stat.lifetime.total.tv_sec * 1000) + (g.stat.lifetime.total.tv_usec / 1000);
-		tmp = tmp / (g.stat.session.total - g.stat.session.active - g.stat.session.timeout);
-		g.stat.lifetime.avg.tv_sec = tmp / 1000;
-		g.stat.lifetime.avg.tv_usec = (tmp % 1000) * 1000;
+	tvsub(&now, &g.session.timestamp, &difftime);
+	syslog(LOG_INFO, "====== TCPEEK SUMMARY ======");
+	syslog(LOG_INFO, " from : %s", from);
+	syslog(LOG_INFO, "   to : %s", to);
+	syslog(LOG_INFO, " time : %3d.%03d", (int)difftime.tv_sec, (int)(difftime.tv_usec / 1000));
+	lnklist_iter_init(g.filter);
+	while(lnklist_iter_hasnext(g.filter)) {
+		filter = lnklist_iter_next(g.filter);
+		stat = filter->stat;
+		if(stat->session.total - stat->session.active - stat->session.timeout > 0) {
+			tmp = (stat->lifetime.total.tv_sec * 1000) + (stat->lifetime.total.tv_usec / 1000);
+			tmp = tmp / (stat->session.total - stat->session.active - stat->session.timeout);
+			stat->lifetime.avg.tv_sec = tmp / 1000;
+			stat->lifetime.avg.tv_usec = (tmp % 1000) * 1000;
+		}
+		syslog(LOG_INFO, "----------------------------");
+		syslog(LOG_INFO, " %s", filter->name);
+		syslog(LOG_INFO, "----------------------------");
+/*
+		syslog(LOG_INFO, " packet");
+		syslog(LOG_INFO, "              cap : %7d", stat->packet.cap);
+		syslog(LOG_INFO, "              tcp : %7d", stat->packet.tcp);
+		syslog(LOG_INFO, "              oos : %7d", stat->packet.oos);
+		syslog(LOG_INFO, "              err : %7d", stat->packet.err);
+*/
+		syslog(LOG_INFO, " session");
+		syslog(LOG_INFO, "            total : %7d", stat->session.total);
+		syslog(LOG_INFO, "              max : %7d", stat->session.max);
+		syslog(LOG_INFO, "           active : %7d", stat->session.active);
+		syslog(LOG_INFO, "          timeout : %7d", stat->session.timeout);
+		syslog(LOG_INFO, " lifetime");
+		syslog(LOG_INFO, "              avg : %3d.%03d", (int)stat->lifetime.avg.tv_sec, (int)(stat->lifetime.avg.tv_usec / 1000));
+		syslog(LOG_INFO, "              max : %3d.%03d", (int)stat->lifetime.max.tv_sec, (int)(stat->lifetime.max.tv_usec / 1000));
+		syslog(LOG_INFO, " segment");
+		syslog(LOG_INFO, "            total : %7d", stat->segment.total);
+		syslog(LOG_INFO, "              err : %7d", stat->segment.err);
+		syslog(LOG_INFO, "           dupsyn : %7d", stat->segment.dupsyn);
+		syslog(LOG_INFO, "        dupsynack : %7d", stat->segment.dupsynack);
+		syslog(LOG_INFO, "           dupack : %7d", stat->segment.dupack);
+		syslog(LOG_INFO, "          retrans : %7d", stat->segment.retrans);
 	}
-	__tvsub(&now, &g.session.timestamp, &difftime);
-	syslog(LOG_INFO, "========== TCPEEK SUMMARY ==========");
-	syslog(LOG_INFO, "      from: %s", from);
-	syslog(LOG_INFO, "        to: %s", to);
-	syslog(LOG_INFO, "      time: %3d.%03d", (int)difftime.tv_sec, (int)(difftime.tv_usec / 1000));
-	syslog(LOG_INFO, "packet -----------------------------");
-	syslog(LOG_INFO, "       cap: %7d", g.stat.packet.cap);
-	syslog(LOG_INFO, "       tcp: %7d", g.stat.packet.tcp);
-	syslog(LOG_INFO, "       oos: %7d", g.stat.packet.oos);
-	syslog(LOG_INFO, "       err: %7d", g.stat.packet.err);
-	syslog(LOG_INFO, "session ----------------------------");
-	syslog(LOG_INFO, "     total: %7d", g.stat.session.total);
-	syslog(LOG_INFO, "       max: %7d", g.stat.session.max);
-	syslog(LOG_INFO, "    active: %7d", g.stat.session.active);
-	syslog(LOG_INFO, "   timeout: %7d", g.stat.session.timeout);
-	syslog(LOG_INFO, "lifetime ---------------------------");
-	syslog(LOG_INFO, "       avg: %3d.%03d", (int)g.stat.lifetime.avg.tv_sec, (int)(g.stat.lifetime.avg.tv_usec / 1000));
-	syslog(LOG_INFO, "       max: %3d.%03d", (int)g.stat.lifetime.max.tv_sec, (int)(g.stat.lifetime.max.tv_usec / 1000));
-	syslog(LOG_INFO, "segment ----------------------------");
-	syslog(LOG_INFO, "     total: %7d", g.stat.segment.total);
-	syslog(LOG_INFO, "       err: %7d", g.stat.segment.err);
-	syslog(LOG_INFO, "    dupsyn: %7d", g.stat.segment.dupsyn);
-	syslog(LOG_INFO, " dupsynack: %7d", g.stat.segment.dupsynack);
-	syslog(LOG_INFO, "    dupack: %7d", g.stat.segment.dupack);
-	syslog(LOG_INFO, "   retrans: %7d", g.stat.segment.retrans);
-	syslog(LOG_INFO, "====================================");
+	syslog(LOG_INFO, "============================");
 }
 
 void

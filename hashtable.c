@@ -32,7 +32,7 @@ static unsigned int
 hash(const void *key, size_t klen, size_t threshold);
 
 extern void *
-__memdup(const void *s, size_t n);
+memdup(const void *s, size_t n);
 
 #ifdef __HASHTABLE_DEBUG__
 int
@@ -272,7 +272,7 @@ hashtable_entry_set(struct hashtable_entry *obj, const void *key, size_t klen, v
 	}
 	obj->key.len = klen;
 	free(obj->key.key);
-	obj->key.key = __memdup(key, klen);
+	obj->key.key = memdup(key, klen);
 	if(obj->value) {
 		old_value = obj->value;
 	}

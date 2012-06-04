@@ -15,6 +15,8 @@ lnklist_size(struct lnklist *obj);
 extern void *
 lnklist_add(struct lnklist *obj, void *data, int index);
 extern void *
+lnklist_add_tail(struct lnklist *obj, void *data);
+extern void *
 lnklist_remove(struct lnklist *obj, int index);
 extern void *
 lnklist_get(struct lnklist *obj, int index);

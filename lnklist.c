@@ -127,6 +127,11 @@ lnklist_add(struct lnklist *obj, void *data, int index) {
 }
 
 void *
+lnklist_add_tail(struct lnklist *obj, void *data) {
+	return obj ? lnklist_add(obj, data, obj->size) : NULL;
+}
+
+void *
 lnklist_remove(struct lnklist *obj, int index) {
 	struct lnklist_node *ptr;
 	int offset;

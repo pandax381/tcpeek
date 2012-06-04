@@ -70,7 +70,8 @@ PROGRAMS = $(sbin_PROGRAMS)
 am_tcpeek_OBJECTS = tcpeek.$(OBJEXT) init.$(OBJEXT) \
 	disassemble.$(OBJEXT) session.$(OBJEXT) cksum.$(OBJEXT) \
 	lnklist.$(OBJEXT) hashtable.$(OBJEXT) common.$(OBJEXT) \
-	checker.$(OBJEXT) listener.$(OBJEXT)
+	checker.$(OBJEXT) listener.$(OBJEXT) filter.$(OBJEXT) \
+	stat.$(OBJEXT)
 tcpeek_OBJECTS = $(am_tcpeek_OBJECTS)
 tcpeek_LDADD = $(LDADD)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -191,7 +192,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-tcpeek_SOURCES = tcpeek.c tcpeek.h init.c disassemble.c session.c cksum.c lnklist.c lnklist.h hashtable.c hashtable.h common.c checker.c listener.c
+tcpeek_SOURCES = tcpeek.c tcpeek.h init.c disassemble.c session.c cksum.c lnklist.c lnklist.h hashtable.c hashtable.h common.c checker.c listener.c filter.c stat.c
 AM_CFLAGS = -W -Wall -Wno-unused-parameter
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
@@ -301,11 +302,13 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cksum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/common.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/disassemble.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filter.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hashtable.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/init.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/listener.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lnklist.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stat.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tcpeek.Po@am__quote@
 
 .c.o:

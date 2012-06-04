@@ -15,7 +15,7 @@ tcpeek_checker_thread(void *arg) {
 		while(lnklist_iter_hasnext(keys)) {
 			key = lnklist_iter_next(keys);
 			session = hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key));
-			if(tcpeek_session_istimeouted(session)) {
+			if(tcpeek_session_istimeout(session)) {
 				tcpeek_session_timeout(session);
 			}
 		}
