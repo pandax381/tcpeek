@@ -284,6 +284,10 @@ extern int
 strisdigit(const char *str);
 extern struct lnklist *
 strsplit(const char *str, const char *sep, size_t num);
+#ifndef HAVE_STRNDUP
+extern char *
+strndup(const char *s1, size_t n);
+#endif
 extern void *
 memdup(const void *s, size_t n);
 extern struct timeval *

@@ -24,7 +24,7 @@ AC_DEFINE([__USE_BSD], 1, [Enable __USE_BSD])
 AC_DEFINE([__FAVOR_BSD], 1, [Enable __FAVOR_BSD])
 
 # Checks for library functions.
-AC_CHECK_FUNCS([memset])
+AC_CHECK_FUNCS([memset strndup])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

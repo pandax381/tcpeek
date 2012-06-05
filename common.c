@@ -85,6 +85,19 @@ memdup(const void *s, size_t n) {
 	return memcpy(malloc(n), s, n);
 }
 
+#ifndef HAVE_STRNDUP
+char *
+strndup(const char *s1, size_t n) {
+	char *dst;
+
+	dst = malloc(n + 1);
+	if(dst) {
+		strncpy(dst, s1, n);
+	}
+	return dst;
+}
+#endif
+
 struct timeval *
 tvsub(struct timeval *a, struct timeval *b, struct timeval *res) {
 	res->tv_sec = a->tv_sec - b->tv_sec;
