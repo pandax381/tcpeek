@@ -182,6 +182,7 @@ tcpeek_terminate(int status) {
 	if(g.filter) {
 		lnklist_destroy_with_destructor(g.filter, (void (*)(void *))tcpeek_filter_destroy);
 	}
+	unlink(TCPEEK_SOCKET_FILE);
 	closelog();
 	exit(status);
 	// does not reached.

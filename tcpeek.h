@@ -16,6 +16,8 @@
 #include <signal.h>
 #include <syslog.h>
 #include <pthread.h>
+#include <pwd.h>
+#include <grp.h>
 #include <arpa/inet.h>
 #include <net/if.h> 
 #include <net/ethernet.h>
@@ -27,9 +29,12 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <ifaddrs.h>
 #include "lnklist.h"
 #include "hashtable.h"
+
+#define TCPEEK_SOCKET_FILE "/var/run/tcpeek/tcpeek.sock"
 
 #define TCPEEK_SESSION_TABLE_SIZE  9973
 #define TCPEEK_CHECKER_INTERVAL_SEC   1
@@ -66,6 +71,7 @@ struct {
 		int  promisc;
 		int  timeout;
 		char checksum;
+		char user[128];
 		struct lnklist *expression;
 	} option;
 	struct {

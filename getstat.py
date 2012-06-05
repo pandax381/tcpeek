@@ -6,10 +6,10 @@ import os
 
 gmetric = "/usr/bin/gmetric"
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.settimeout(3)
 try:
-	sock.connect(('127.0.0.1', 10381))
+	sock.connect('/var/run/tcpeek/tcpeek.sock')
 	data = json.loads(sock.recv(8192))
 	for _filter in data:
 		for name in _filter.keys():

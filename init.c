@@ -17,6 +17,8 @@ tcpeek_init_filter_and_stat(void);
 static void
 tcpeek_init_pcap(void);
 static void
+tcpeek_init_setuid(void);
+static void
 tcpeek_init_socket(void);
 static void
 usage(void); 
@@ -33,6 +35,7 @@ tcpeek_init(int argc, char *argv[]) {
 	tcpeek_init_session();
 	tcpeek_init_filter_and_stat();
 	tcpeek_init_pcap();
+	tcpeek_init_setuid();
 	tcpeek_init_socket();
 }
 
@@ -50,16 +53,18 @@ tcpeek_init_global(void) {
 static void
 tcpeek_init_option(int argc, char *argv[]) {
 	int opt, index;
-	static struct option optlist[] = {
-		{"help",      0, NULL, 'h'},
-		{"version",   0, NULL, 'V'},
-		{"interface", 0, NULL, 'i'},
-		{"checksum",  0, NULL, 'c'},
-		{0, 0, 0, 0}
-	};
 
-	while((opt = getopt_long_only(argc, argv, "+hVi:c:", optlist, NULL)) != -1) {
+	while((opt = getopt(argc, argv, "u:i:c:hV")) != -1) {
 		switch(opt) {
+			case 'u':
+				strncpy(g.option.user, optarg, sizeof(g.option.user) - 1);
+				break;
+			case 'i':
+				strncpy(g.option.ifname, optarg, sizeof(g.option.ifname) - 1);
+				break;
+			case 'c':
+				// TODO
+				break;
 			case 'h':
 				usage();
 				tcpeek_terminate(0);
@@ -68,12 +73,6 @@ tcpeek_init_option(int argc, char *argv[]) {
 				version();
 				tcpeek_terminate(0);
 				break; // does not reached.
-			case 'i':
-				strncpy(g.option.ifname, optarg, sizeof(g.option.ifname) - 1);
-				break;
-			case 'c':
-				// TODO
-				break;
 			default:
 				usage();
 				tcpeek_terminate(1);
@@ -239,32 +238,68 @@ tcpeek_init_pcap(void) {
 }
 
 static void
-tcpeek_init_socket(void) {
-	int opt;
-	struct sockaddr_in sockaddr;
+tcpeek_init_setuid(void) {
+	struct passwd *passwd;
+	gid_t groups[128];
+	int ngroups;
 
-	g.soc = socket(AF_INET, SOCK_STREAM, 0);
+	if(!strisempty(g.option.user)) {
+		passwd = strisdigit(g.option.user) ? getpwuid((uid_t)strtol(g.option.user, NULL, 10)) : getpwnam(g.option.user);
+		if(!passwd) {
+			fprintf(stderr, "%s: %s\n", __func__, strerror(errno));
+			tcpeek_terminate(1);
+			// does not reached.
+		}
+		ngroups = sizeof(groups);
+		if(getgrouplist(g.option.user, passwd->pw_gid, groups, &ngroups) == -1) {
+			// TODO: retry...
+			fprintf(stderr, "%s: getgrouplist: %s\n", __func__, strerror(errno));
+			tcpeek_terminate(1);
+			// does not reached.
+		}
+		if(setgroups(ngroups, groups) == -1) {
+			fprintf(stderr, "%s: setgroups: %s\n", __func__, strerror(errno));
+			tcpeek_terminate(1);
+			// does not reached.
+		}
+		if(setgid(passwd->pw_gid) == -1) {
+			fprintf(stderr, "%s: setgid: %s\n", __func__, strerror(errno));
+			tcpeek_terminate(1);
+			// does not reached.
+		}
+		if(setuid(passwd->pw_uid) == -1) {
+			fprintf(stderr, "%s: setuid: %s\n", __func__, strerror(errno));
+			tcpeek_terminate(1);
+			// does not reached.
+		}
+	}
+}
+
+static void
+tcpeek_init_socket(void) {
+	struct sockaddr_un sockaddr;
+
+	g.soc = socket(PF_UNIX, SOCK_STREAM, 0);
 	if(g.soc == -1) {
 		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
 		tcpeek_terminate(1);
 		// does not reached.
 	}
 	memset(&sockaddr, 0, sizeof(sockaddr));
-	sockaddr.sin_family = AF_INET;
-	sockaddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	sockaddr.sin_port = htons((uint16_t)10381);
-	opt = 1;
-	setsockopt(g.soc, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+	sockaddr.sun_family = PF_UNIX;
+	strcpy(sockaddr.sun_path, TCPEEK_SOCKET_FILE);
 	if(bind(g.soc, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1) {
-		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
-		tcpeek_terminate(1);
-		// does not reached.
+			syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
+			tcpeek_terminate(1);
+			// does not reached.
 	}
 }
 
 static void
 usage(void) {
 	printf("usage: %s [option] [expression]\n", PACKAGE_NAME);
+	printf("  -u uid\n");
+	printf("  -i ifname\n");
 }
 
 static void
