@@ -12,7 +12,6 @@ AC_PROG_CC
 
 # Checks for libraries.
 AC_CHECK_LIB(socket, socket)
-AC_CHECK_LIB(pcap, pcap_lib_version)
 AC_CHECK_LIB(pthread, pthread_create)
 
 # Checks for header files.
