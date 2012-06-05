@@ -44,6 +44,7 @@ tcpeek_init_global(void) {
 	g.option.expression = lnklist_create();
 	g.stat = lnklist_create();
 	g.filter = lnklist_create();
+	g.soc = -1;
 }
 
 static void
@@ -239,7 +240,26 @@ tcpeek_init_pcap(void) {
 
 static void
 tcpeek_init_socket(void) {
+	int opt;
+	struct sockaddr_in sockaddr;
 
+	g.soc = socket(AF_INET, SOCK_STREAM, 0);
+	if(g.soc == -1) {
+		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
+		tcpeek_terminate(1);
+		// does not reached.
+	}
+	memset(&sockaddr, 0, sizeof(sockaddr));
+	sockaddr.sin_family = AF_INET;
+	sockaddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	sockaddr.sin_port = htons((uint16_t)10381);
+	opt = 1;
+	setsockopt(g.soc, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+	if(bind(g.soc, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1) {
+		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
+		tcpeek_terminate(1);
+		// does not reached.
+	}
 }
 
 static void

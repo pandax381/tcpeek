@@ -83,6 +83,7 @@ struct {
 	} session;
 	struct lnklist *stat;
 	struct lnklist *filter;
+	int soc;
 	int terminate;
 } g;
 
