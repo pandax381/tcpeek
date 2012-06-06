@@ -1,23 +1,100 @@
 #!/usr/bin/env python
 # coding: utf-8
+import os
+import sys
+import getopt
 import socket
 import json
-import os
 
-gmetric = "/usr/bin/gmetric"
+socket_file = '/var/run/tcpeek/tcpeek.sock'
+gmetric = '/usr/bin/gmetric'
+use_gmetric = 0
 
-sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.settimeout(3)
-try:
-	sock.connect('/var/run/tcpeek/tcpeek.sock')
-	data = json.loads(sock.recv(8192))
-	for _filter in data:
+def init():
+	global use_gmetric, socket_file
+	try:
+		opts, args = getopt.getopt(sys.argv[1:], "U:ghv", ["socket=","gmetric","help", "version"])
+	except getopt.GetoptError:
+		usage()
+		sys.exit(2)
+
+	for o, a in opts:
+		if o in ("-h", "--help"):
+			usage()
+			sys.exit()
+		if o in ("-v", "--version"):
+			version()
+			sys.exit()
+		if o in ("-U", "--socket"):
+			socket_file = a
+		if o in ("-g", "--gmetric"):
+			use_gmetric = 1
+
+def usage():
+	print "usage: tcpeekstat [OPTION]"
+	print "  [OPTION]"
+	print "    -g  --gmetric      # exec gmetric"
+	print "    -U  --socket=path  # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)"
+	print "    -v  --version      # version"
+	print "    -h  --help         # help"
+	sys.exit()
+
+def version():
+	usage()
+
+def getstat():
+	msg = str() 
+	sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+	sock.settimeout(3)
+	try:
+		sock.connect(socket_file)
+		while 1:
+			chunk = sock.recv(1024)
+			if chunk == '':
+				break
+			msg = msg + chunk
+	except socket.error, e:
+		print "socket.error:", e
+		sys.exit()
+	finally:
+		sock.close()
+	return msg
+
+def exec_gmetric(stat):
+	for _filter in stat:
 		for name in _filter.keys():
 			for section in _filter[name].keys():
+				if section != "segment":
+					continue
 				for item in _filter[name][section].keys():
-					#print("%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section, item]), _filter[name][section][item]))
-					os.system("%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section, item]), _filter[name][section][item]))
-except socket.error, e:
-	print(e)
-finally:
-	sock.close()
+					if item != "dupsyn" and item != "dupsynack" and item != "dupack" and item != "retrans":
+						continue
+					cmd = "%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section, item]), _filter[name][section][item])
+					print cmd
+					os.system(cmd)
+
+def print_stat(stat):
+	print "====== TCPEEK SUMMARY ======"
+	for _filter in stat:
+		for name in _filter.keys():
+			print "----------------------------"
+			print " %s" % (name)
+			print "----------------------------"
+			for section in _filter[name].keys():
+				print " %s" % (section)
+				for item in _filter[name][section].keys():
+					print "     %-10s %10s" % (item, _filter[name][section][item])
+	print "============================"
+
+def main():
+	init()
+	msg = getstat()
+	print msg
+	data = json.loads(msg)
+	if use_gmetric:
+		exec_gmetric(data)
+	else:
+		print_stat(data)
+
+if __name__ == "__main__":
+	main()
