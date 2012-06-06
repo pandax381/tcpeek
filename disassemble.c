@@ -61,7 +61,7 @@ tcpeek_disassemble_ip(const uint8_t *packet, uint16_t plen, int datalink, struct
 	if(g.option.checksum & TCPEEK_CKSUM_IP) {
 		sum = cksum16((uint16_t *)ip, hlen, 0);
 		if(sum != 0) {
-			syslog(LOG_WARNING, "%s [warning] IP checksum error. %04X (%04X)\n", __func__, sum, ip->ip_sum);
+			lprintf(LOG_WARNING, "%s [warning] IP checksum error. %04X (%04X)", __func__, sum, ip->ip_sum);
 			return NULL;
 		}
 	}
@@ -102,7 +102,7 @@ tcpeek_disassemble_tcp(const uint8_t *packet, uint16_t plen, int datalink, struc
 		pseudo += htons(tcplen);
 		sum = cksum16((uint16_t *)tcphdr, tcplen, pseudo);
 		if(sum != 0) {
-			syslog(LOG_WARNING, "%s [warning] TCP checksum error. %04X (%04X)\n", __func__, sum, tcphdr->th_sum);
+			lprintf(LOG_WARNING, "%s [warning] TCP checksum error. %04X (%04X)", __func__, sum, tcphdr->th_sum);
 			return NULL;
 		}
 	}

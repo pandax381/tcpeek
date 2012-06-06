@@ -79,6 +79,7 @@ tcpeek_session_close(struct tcpeek_session *session) {
 		}
 		tvadd(&stat->lifetime.total, &difftime);
 	}
+	/*
 	stat->segment.total += (lnklist_size(session->sequence.segments[0]) + lnklist_size(session->sequence.segments[1]));
 	stat->segment.err += session->counter.err;
 	if(session->counter.dupsyn || session->counter.dupsynack || session->counter.dupack || session->counter.retrans) {
@@ -87,6 +88,7 @@ tcpeek_session_close(struct tcpeek_session *session) {
 		stat->segment.dupack += session->counter.dupack;
 		stat->segment.retrans += session->counter.retrans;
 	}
+	*/
 	tcpeek_session_print(session);
 	tcpeek_session_destroy(session);
 }
@@ -142,6 +144,7 @@ tcpeek_session_add_segment(struct tcpeek_session *session, struct tcpeek_segment
 	int self;
 	struct tcpeek_segment *_segment;
 
+	session->stat->segment.total++;
 	session->sequence.timestamp[1] = segment->timestamp;
 	_segment = memdup(segment, sizeof(struct tcpeek_segment));
 	self = tcpeek_session_isowner(session, segment) ^ 0x01;
@@ -159,14 +162,15 @@ tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *s
 		session->sequence.fack[self] = session->sequence.lack[self] = ntohl(segment->tcp.hdr.th_ack);
 		session->sequence.rwin[self] = ntohs(segment->tcp.hdr.th_win);
 		if (session->sequence.state[peer] == TCPEEK_TCP_SYN_SENT) {
-			syslog(LOG_DEBUG, "%s [debug simultaneous open.", __func__);
+			lprintf(LOG_DEBUG, "%s [debug simultaneous open.", __func__);
 		}
 	}
 	else if (session->sequence.fseq[self] == ntohl(segment->tcp.hdr.th_seq) && session->sequence.fack[self] == ntohl(segment->tcp.hdr.th_ack)) {
+		session->stat->segment.dupsyn++;
 		session->counter.dupsyn++;
 	}
 	else {
-		syslog(LOG_WARNING, "%s [warning] Duplicate connection.", __func__);
+		lprintf(LOG_WARNING, "%s [warning] Duplicate connection.", __func__);
 		return -1;
 	}
 	return 0;
@@ -190,6 +194,7 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 		session->sequence.lack[self] = ntohl(segment->tcp.hdr.th_ack);
 	}
 	else if (ntohl(segment->tcp.hdr.th_ack) == session->sequence.fseq[peer] + 1) {
+		session->stat->segment.dupack++;
 		session->counter.dupsynack++;
 	}
 	else {
@@ -209,6 +214,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 	if (session->sequence.lseq[self] > ntohl(segment->tcp.hdr.th_seq)) {
 		if (segment->tcp.psize) {
 			if (tcpeek_session_recv_isretransmit(session, segment)) {
+				session->stat->segment.retrans++;
 				session->counter.retrans++;
 			}
 		}
@@ -222,6 +228,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
  		if (session->sequence.state[peer] == TCPEEK_TCP_ESTABLISHED) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
+					session->stat->segment.dupack++;
 					session->counter.dupack++;
 					return 0;
 				}
@@ -256,6 +263,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 		if (session->sequence.state[peer] == TCPEEK_TCP_CLOSE_WAIT) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
+					session->stat->segment.dupack++;
 					session->counter.dupack++;
 					return 0;
 				}
@@ -286,6 +294,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 		if (session->sequence.state[peer] == TCPEEK_TCP_FIN_WAIT2) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
+					session->stat->segment.dupack++;
 					session->counter.dupack++;
 					return 0;
 				}
@@ -479,8 +488,8 @@ tcpeek_session_print(struct tcpeek_session *session) {
 
 	if (isfirsttime) {
 		isfirsttime = 0;
-		syslog(LOG_INFO, " TIME(s) |       TIMESTAMP       |      SRC IP:PORT           DST IP:PORT      |  STATE  SEG_NUM  SYN_DUP  S/A_DUP  ACK_DUP RETRANS  ERR   S/P");
-		syslog(LOG_INFO, "------------------------------------------------------------------------------------------------------------------------------------------------");
+		lprintf(LOG_INFO, " TIME(s) |       TIMESTAMP       |      SRC IP:PORT           DST IP:PORT      |  STATE  SEG_NUM  SYN_DUP  S/A_DUP  ACK_DUP RETRANS  ERR   S/P");
+		lprintf(LOG_INFO, "------------------------------------------------------------------------------------------------------------------------------------------------");
 	}
 	tvsub(&session->sequence.timestamp[1], &session->sequence.timestamp[0], &difftime);
 	localtime_r(&session->sequence.timestamp[0].tv_sec, &tm);
@@ -496,7 +505,7 @@ tcpeek_session_print(struct tcpeek_session *session) {
 			reason = session->counter.rst ? " RESET " : " CLOSE ";
 			break;
 	}
-	syslog(LOG_INFO, "%4d.%03d | %s.%03d | %15s:%-5u %15s:%-5u | %s %7ld  %7u  %7u  %7u %7u  %3u | %d/%d",
+	lprintf(LOG_INFO, "%4d.%03d | %s.%03d | %15s:%-5u %15s:%-5u | %s %7ld  %7u  %7u  %7u %7u  %3u | %d/%d",
 		(int)difftime.tv_sec,
 		(int)(difftime.tv_usec / 1000),
 		timestamp,

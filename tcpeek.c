@@ -49,13 +49,13 @@ tcpeek_execute(void) {
 
 	err = pthread_create(&checker, NULL, tcpeek_checker_thread, NULL);
 	if(err) {
-		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(err));
+		lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(err));
 		tcpeek_terminate(1);
 		// does not reached.
 	}
 	err = pthread_create(&listener, NULL, tcpeek_listener_thread, NULL);
 	if(err) {
-		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(err));
+		lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(err));
 		tcpeek_terminate(1);
 		// does not reached.
 	}
@@ -70,14 +70,14 @@ tcpeek_execute(void) {
 		}
 		else if(ready == -1) {
 			if(errno != EINTR) {
-				syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
+				lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(errno));
 				tcpeek_terminate(1);
 				break; // does not reached.
 			}
 		}
 		else {
 			if(pcap_dispatch(g.pcap.pcap, 0, tcpeek_fetch, NULL) == -1) {
-				syslog(LOG_ERR, "%s: [error] %s\n", __func__, pcap_geterr(g.pcap.pcap));
+				lprintf(LOG_ERR, "%s: [error] %s", __func__, pcap_geterr(g.pcap.pcap));
 				tcpeek_terminate(1);
 				break; // does not reached.
 			}
@@ -124,7 +124,7 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 		}
 		session = tcpeek_session_open(&segment, filter->stat);
 		if(!session) {
-			syslog(LOG_WARNING, "%s: [warning] %s\n", __func__, "session add error.");
+			lprintf(LOG_WARNING, "%s: [warning] %s", __func__, "session add error.");
 			pthread_mutex_unlock(&g.session.mutex);
 			return;
 		}
@@ -157,6 +157,7 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	}
 	tcpeek_session_add_segment(session, &segment);
 	if(err) {
+		session->stat->segment.err++;
 		session->counter.err++;
 	}
 	if (tcpeek_session_isclosed(session)) {
@@ -183,7 +184,7 @@ tcpeek_terminate(int status) {
 		lnklist_destroy_with_destructor(g.filter, (void (*)(void *))tcpeek_filter_destroy);
 	}
 	unlink(TCPEEK_SOCKET_FILE);
-	closelog();
+	//closelog();
 	exit(status);
 	// does not reached.
 }
@@ -205,7 +206,7 @@ tcpeek_terminate_session(void) {
 
 static void
 tcpeek_print_pcap_status(void) {
-	syslog(LOG_INFO, "listening on %s, link-type %s (%s), capture size %d bytes",
+	lprintf(LOG_INFO, "listening on %s, link-type %s (%s), capture size %d bytes",
 		g.option.ifname,
 		pcap_datalink_val_to_name(g.pcap.datalink),
 		pcap_datalink_val_to_description(g.pcap.datalink),
@@ -226,10 +227,11 @@ tcpeek_print_summary(void) {
 	strftime(from, sizeof(from), "%Y-%m-%d %T", localtime_r(&g.session.timestamp.tv_sec, &tm));
 	strftime(to, sizeof(to), "%Y-%m-%d %T", localtime_r(&now.tv_sec, &tm));
 	tvsub(&now, &g.session.timestamp, &difftime);
-	syslog(LOG_INFO, "====== TCPEEK SUMMARY ======");
-	syslog(LOG_INFO, " from : %s", from);
-	syslog(LOG_INFO, "   to : %s", to);
-	syslog(LOG_INFO, " time : %3d.%03d", (int)difftime.tv_sec, (int)(difftime.tv_usec / 1000));
+	lprintf(LOG_INFO, "");
+	lprintf(LOG_INFO, "====== TCPEEK SUMMARY ======");
+	lprintf(LOG_INFO, " from : %s", from);
+	lprintf(LOG_INFO, "   to : %s", to);
+	lprintf(LOG_INFO, " time : %3d.%03d", (int)difftime.tv_sec, (int)(difftime.tv_usec / 1000));
 	lnklist_iter_init(g.filter);
 	while(lnklist_iter_hasnext(g.filter)) {
 		filter = lnklist_iter_next(g.filter);
@@ -240,33 +242,33 @@ tcpeek_print_summary(void) {
 			stat->lifetime.avg.tv_sec = tmp / 1000;
 			stat->lifetime.avg.tv_usec = (tmp % 1000) * 1000;
 		}
-		syslog(LOG_INFO, "----------------------------");
-		syslog(LOG_INFO, " %s", filter->name);
-		syslog(LOG_INFO, "----------------------------");
+		lprintf(LOG_INFO, "----------------------------");
+		lprintf(LOG_INFO, " %s", filter->name);
+		lprintf(LOG_INFO, "----------------------------");
 /*
-		syslog(LOG_INFO, " packet");
-		syslog(LOG_INFO, "              cap : %7d", stat->packet.cap);
-		syslog(LOG_INFO, "              tcp : %7d", stat->packet.tcp);
-		syslog(LOG_INFO, "              oos : %7d", stat->packet.oos);
-		syslog(LOG_INFO, "              err : %7d", stat->packet.err);
+		lprintf(LOG_INFO, " packet");
+		lprintf(LOG_INFO, "              cap : %7d", stat->packet.cap);
+		lprintf(LOG_INFO, "              tcp : %7d", stat->packet.tcp);
+		lprintf(LOG_INFO, "              oos : %7d", stat->packet.oos);
+		lprintf(LOG_INFO, "              err : %7d", stat->packet.err);
 */
-		syslog(LOG_INFO, " session");
-		syslog(LOG_INFO, "            total : %7d", stat->session.total);
-		syslog(LOG_INFO, "              max : %7d", stat->session.max);
-		syslog(LOG_INFO, "           active : %7d", stat->session.active);
-		syslog(LOG_INFO, "          timeout : %7d", stat->session.timeout);
-		syslog(LOG_INFO, " lifetime");
-		syslog(LOG_INFO, "              avg : %3d.%03d", (int)stat->lifetime.avg.tv_sec, (int)(stat->lifetime.avg.tv_usec / 1000));
-		syslog(LOG_INFO, "              max : %3d.%03d", (int)stat->lifetime.max.tv_sec, (int)(stat->lifetime.max.tv_usec / 1000));
-		syslog(LOG_INFO, " segment");
-		syslog(LOG_INFO, "            total : %7d", stat->segment.total);
-		syslog(LOG_INFO, "              err : %7d", stat->segment.err);
-		syslog(LOG_INFO, "           dupsyn : %7d", stat->segment.dupsyn);
-		syslog(LOG_INFO, "        dupsynack : %7d", stat->segment.dupsynack);
-		syslog(LOG_INFO, "           dupack : %7d", stat->segment.dupack);
-		syslog(LOG_INFO, "          retrans : %7d", stat->segment.retrans);
+		lprintf(LOG_INFO, " session");
+		lprintf(LOG_INFO, "            total : %7d", stat->session.total);
+		lprintf(LOG_INFO, "              max : %7d", stat->session.max);
+		lprintf(LOG_INFO, "           active : %7d", stat->session.active);
+		lprintf(LOG_INFO, "          timeout : %7d", stat->session.timeout);
+		lprintf(LOG_INFO, " lifetime");
+		lprintf(LOG_INFO, "              avg : %3d.%03d", (int)stat->lifetime.avg.tv_sec, (int)(stat->lifetime.avg.tv_usec / 1000));
+		lprintf(LOG_INFO, "              max : %3d.%03d", (int)stat->lifetime.max.tv_sec, (int)(stat->lifetime.max.tv_usec / 1000));
+		lprintf(LOG_INFO, " segment");
+		lprintf(LOG_INFO, "            total : %7d", stat->segment.total);
+		lprintf(LOG_INFO, "              err : %7d", stat->segment.err);
+		lprintf(LOG_INFO, "           dupsyn : %7d", stat->segment.dupsyn);
+		lprintf(LOG_INFO, "        dupsynack : %7d", stat->segment.dupsynack);
+		lprintf(LOG_INFO, "           dupack : %7d", stat->segment.dupack);
+		lprintf(LOG_INFO, "          retrans : %7d", stat->segment.retrans);
 	}
-	syslog(LOG_INFO, "============================");
+	lprintf(LOG_INFO, "============================");
 }
 
 void
@@ -277,7 +279,7 @@ tcpeek_print_segment(struct tcpeek_segment *segment, int pos, const char *msg) {
 
 	tcphdr = &segment->tcp.hdr;
 	ip = &segment->tcp.ip.hdr;
-	syslog(LOG_DEBUG, "%s: [debug] TCP/IP %s:%u %s%c%c%c%c%c%c%s %s:%u (%08X / %08X) %d | %s\n", __func__,
+	lprintf(LOG_DEBUG, "%s: [debug] TCP/IP %s:%u %s%c%c%c%c%c%c%s %s:%u (%08X / %08X) %d | %s", __func__,
 		inet_ntop(AF_INET, pos == 0 ? &ip->ip_src : &ip->ip_dst, saddr, sizeof(saddr)),
 		ntohs(pos == 0 ? tcphdr->th_sport : tcphdr->th_dport),
 		pos == 0 ? " " : "<",

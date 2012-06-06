@@ -34,6 +34,9 @@
 #include "lnklist.h"
 #include "hashtable.h"
 
+#define lprintf(level, fmt, ...) \
+	fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+
 #define TCPEEK_SOCKET_FILE "/var/run/tcpeek/tcpeek.sock"
 
 #define TCPEEK_SESSION_TABLE_SIZE  9973

@@ -7,7 +7,7 @@ tcpeek_init_option(int argc, char *argv[]);
 static void
 tcpeek_init_signal(void);
 static void
-tcpeek_init_syslog(void);
+tcpeek_init_log(void);
 static void
 tcpeek_init_addr(void);
 static void
@@ -30,7 +30,7 @@ tcpeek_init(int argc, char *argv[]) {
 	tcpeek_init_global();
 	tcpeek_init_option(argc, argv);
 	tcpeek_init_signal();
-	tcpeek_init_syslog();
+	tcpeek_init_log();
 	tcpeek_init_addr();
 	tcpeek_init_session();
 	tcpeek_init_filter_and_stat();
@@ -128,8 +128,8 @@ tcpeek_init_signal(void) {
 }
 
 static void
-tcpeek_init_syslog(void) {
-	openlog(PACKAGE_NAME, LOG_NDELAY | LOG_PERROR, LOG_DAEMON);
+tcpeek_init_log(void) {
+	//openlog(PACKAGE_NAME, LOG_NDELAY | LOG_PERROR, LOG_DAEMON);
 }
 
 static void
@@ -140,7 +140,7 @@ tcpeek_init_addr(void) {
 		for(ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
 			if(strisequal(ifa->ifa_name, g.option.ifname) && ifa->ifa_addr->sa_family == AF_INET) {
 				g.addr.unicast.s_addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
-				syslog(LOG_DEBUG, "%s: [debug] unicast: %s\n", __func__, inet_ntoa(g.addr.unicast));
+				lprintf(LOG_DEBUG, "%s: [debug] unicast: %s", __func__, inet_ntoa(g.addr.unicast));
 				break;
 			}
 		}
@@ -156,7 +156,7 @@ static void
 tcpeek_init_session(void) {
 	g.session.table = hashtable_create(TCPEEK_SESSION_TABLE_SIZE);
 	if(!g.session.table) {
-		syslog(LOG_ERR, "%s: [error] hashtable can't create.\n", __func__);
+		lprintf(LOG_ERR, "%s: [error] hashtable can't create.", __func__);
 		tcpeek_terminate(1);
 		// does not reached.
 	}
@@ -175,19 +175,19 @@ tcpeek_init_filter_and_stat(void) {
 		stat = tcpeek_stat_create();
 		if(!lnklist_add_tail(g.stat, stat)) {
 			tcpeek_stat_destroy(stat);
-			syslog(LOG_ERR, "%s: [error] alloc error.", __func__);
+			lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
 			tcpeek_terminate(1);
 			// does not reached.
 		}
 		filter = tcpeek_filter_create();
 		if(!lnklist_add_tail(g.filter, filter)) {
 			tcpeek_filter_destroy(filter);
-			syslog(LOG_ERR, "%s: [error] alloc error.", __func__);
+			lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
 			tcpeek_terminate(1);
 			// does not reached.
 		}
 		if(tcpeek_filter_parse(filter, expression) == -1) {
-			syslog(LOG_ERR, "%s: [error] filter '%s' parse error.", __func__, expression);
+			lprintf(LOG_ERR, "%s: [error] filter '%s' parse error.", __func__, expression);
 			tcpeek_terminate(1);
 			// does not reached.
 		}
@@ -203,7 +203,7 @@ tcpeek_init_pcap(void) {
 	if(g.option.ifname[0] == '\0') {
 		ifname = pcap_lookupdev(errmsg);
 		if(!ifname) {
-			syslog(LOG_ERR, "%s: [error] %s\n", __func__, errmsg);
+			lprintf(LOG_ERR, "%s: [error] %s", __func__, errmsg);
 			tcpeek_terminate(1);
 			// does not reached.
 		}
@@ -211,18 +211,18 @@ tcpeek_init_pcap(void) {
 	}
 	g.pcap.pcap = pcap_open_live(g.option.ifname, 65535, g.option.promisc, 1, errmsg);
 	if(!g.pcap.pcap) {
-		syslog(LOG_ERR, "%s: [error] %s\n", __func__, errmsg);
+		lprintf(LOG_ERR, "%s: [error] %s", __func__, errmsg);
 		tcpeek_terminate(1);
 		// does not reached.
 	}
 	expression = "tcp";
 	if(pcap_compile(g.pcap.pcap, &bpf, expression, 0, 0) == -1) {
-		syslog(LOG_ERR, "%s: [error] %s '%s'\n", __func__, pcap_geterr(g.pcap.pcap), expression);
+		lprintf(LOG_ERR, "%s: [error] %s '%s'", __func__, pcap_geterr(g.pcap.pcap), expression);
 		tcpeek_terminate(1);
 		// does not reached.
 	}
 	if(pcap_setfilter(g.pcap.pcap, &bpf) == -1){
-		syslog(LOG_ERR, "%s: [error] %s\n", __func__, pcap_geterr(g.pcap.pcap));
+		lprintf(LOG_ERR, "%s: [error] %s", __func__, pcap_geterr(g.pcap.pcap));
 		tcpeek_terminate(1);
 		// does not reached.
 	}
@@ -230,7 +230,7 @@ tcpeek_init_pcap(void) {
 	g.pcap.snapshot = pcap_snapshot(g.pcap.pcap);
 	g.pcap.datalink = pcap_datalink(g.pcap.pcap);
 	if(g.pcap.datalink != DLT_EN10MB && g.pcap.datalink != DLT_LINUX_SLL) {
-		syslog(LOG_ERR, "%s: [error] not support datalink %s (%s)\n", __func__,
+		lprintf(LOG_ERR, "%s: [error] not support datalink %s (%s)", __func__,
 			pcap_datalink_val_to_name(g.pcap.datalink), pcap_datalink_val_to_description(g.pcap.datalink));
 		tcpeek_terminate(1);
 		// does not reached.
@@ -281,7 +281,7 @@ tcpeek_init_socket(void) {
 
 	g.soc = socket(PF_UNIX, SOCK_STREAM, 0);
 	if(g.soc == -1) {
-		syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
+		lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(errno));
 		tcpeek_terminate(1);
 		// does not reached.
 	}
@@ -289,7 +289,7 @@ tcpeek_init_socket(void) {
 	sockaddr.sun_family = PF_UNIX;
 	strcpy(sockaddr.sun_path, TCPEEK_SOCKET_FILE);
 	if(bind(g.soc, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1) {
-			syslog(LOG_ERR, "%s: [error] %s\n", __func__, strerror(errno));
+			lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(errno));
 			tcpeek_terminate(1);
 			// does not reached.
 	}
@@ -297,9 +297,23 @@ tcpeek_init_socket(void) {
 
 static void
 usage(void) {
-	printf("usage: %s [option] [expression]\n", PACKAGE_NAME);
-	printf("  -u uid\n");
-	printf("  -i ifname\n");
+	printf("usage: %s [option]... [expression]...\n", PACKAGE_NAME);
+	printf("  option:\n");
+	printf("    -u --user=uid         # set uid\n");
+	printf("    -i --interface=dev    # network device (ex: eth0)\n");
+	printf("    -c --checksum=[0|1|2] # ckecksum lookup mode 0=none 1=ip 2=tcp (default: 0)\n");
+	printf("    -t --timeout=sec      # session timeout (default: 60)\n");
+	printf("    -U --socket=path      # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)\n");
+	printf("       --with-icmp        # enable icmp port unreachable lookup\n");
+	printf("    -l --loglevel=LEVEL   # see man syslog (default: LOG_NOTICE)\n");
+	printf("    -q --quite            # quite mode\n");
+	printf("    -v --version          # version\n");
+	printf("    -h --help             # help\n");
+	printf("  expression:\n");
+	printf("    filter:dir@addr:port[,port...]\n");
+	printf("  ex)\n");
+	printf("    tcpeek -i eth0 filter:IN@*:80,443\n");
+	printf("    tcpeek -i eth0 filter:OUT@192.168.0.100:*\n");
 }
 
 static void
