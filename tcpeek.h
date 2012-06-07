@@ -134,6 +134,7 @@ struct tcpeek_filter {
 
 struct tcpeek_filter_rule {
 	struct in_addr addr;
+	uint8_t prefix;
 	struct lnklist *port;
 };
 

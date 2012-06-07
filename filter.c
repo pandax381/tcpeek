@@ -2,6 +2,8 @@
 
 static int
 tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression);
+static uint32_t
+getnwaddr(uint32_t addr, uint8_t prefix);
 
 struct tcpeek_filter *
 tcpeek_filter_create(void) {
@@ -102,7 +104,7 @@ tcpeek_filter_parse(struct tcpeek_filter *filter, const char *expression) {
 static int
 tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression) {
 	struct lnklist *list;
-	char *addr, *port;
+	char *prefix, *addr, *port;
 	uint16_t portno;
 
 	list = strsplit(expression, ":", 0);
@@ -116,10 +118,26 @@ tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression
 		rule->addr.s_addr = htonl(INADDR_ANY);
 	}
 	else {
+		if((prefix = strchr(addr, '/'))) {
+			*(prefix++) = '\0';
+			if(strisdigit(prefix) == 0) {
+				lnklist_destroy_with_destructor(list, free);
+				return -1;
+			}
+			rule->prefix = (uint8_t)strtol(prefix, NULL, 10);
+			if(rule->prefix > 32) {
+				lnklist_destroy_with_destructor(list, free);
+				return -1;
+			}
+		}
+		else {
+			rule->prefix = 32;
+		}
 		if(inet_pton(AF_INET, addr, &rule->addr) != 1) {
 			lnklist_destroy_with_destructor(list, free);
 			return -1;
 		}
+fprintf(stderr, "%s/%u\n", inet_ntoa(rule->addr), rule->prefix);
 	}
 	while(lnklist_iter_hasnext(list)) {
 		port = lnklist_iter_next(list);
@@ -158,7 +176,7 @@ tcpeek_filter_lookup(struct tcpeek_segment *segment) {
 				if(segment->tcp.ip.hdr.ip_dst.s_addr != g.addr.unicast.s_addr) {
 					continue;
 				}
-				if(rule->addr.s_addr != htonl(INADDR_ANY) && rule->addr.s_addr != segment->tcp.ip.hdr.ip_src.s_addr) {
+				if(rule->addr.s_addr != htonl(INADDR_ANY) && getnwaddr(segment->tcp.ip.hdr.ip_src.s_addr, rule->prefix) != rule->addr.s_addr) {
 					continue;
 				}
 			}
@@ -166,7 +184,7 @@ tcpeek_filter_lookup(struct tcpeek_segment *segment) {
 				if(segment->tcp.ip.hdr.ip_src.s_addr != g.addr.unicast.s_addr) {
 					continue;
 				}
-				if(rule->addr.s_addr != htonl(INADDR_ANY) && rule->addr.s_addr != segment->tcp.ip.hdr.ip_dst.s_addr) {
+				if(rule->addr.s_addr != htonl(INADDR_ANY) && getnwaddr(segment->tcp.ip.hdr.ip_dst.s_addr, rule->prefix) != rule->addr.s_addr) {
 					continue;
 				}
 			}
@@ -180,4 +198,9 @@ tcpeek_filter_lookup(struct tcpeek_segment *segment) {
 		}
 	}
 	return NULL;
+}
+
+static uint32_t
+getnwaddr(uint32_t addr, uint8_t prefix) {
+	return htonl(ntohl(addr) & (uint32_t)0xffffffff << (32 - prefix));
 }

@@ -147,6 +147,7 @@ tcpeek_init_addr(void) {
 	}
 	freeifaddrs(ifap);
 	if(!ifa) {
+		lprintf(LOG_DEBUG, "%s: [error] '%s' not found", __func__, g.option.ifname);
 		tcpeek_terminate(1);
 		// does not reached.
 	}
@@ -312,8 +313,9 @@ usage(void) {
 	printf("  expression:\n");
 	printf("    filter:dir@addr:port[,port...]\n");
 	printf("  ex)\n");
-	printf("    tcpeek -i eth0 filter:IN@*:80,443\n");
-	printf("    tcpeek -i eth0 filter:OUT@192.168.0.100:*\n");
+	printf("    tcpeek -i eth0 filter:IN@*:80:443\n");
+	printf("    tcpeek -i eth0 filter:OUT@192.168.0.0/24:*\n");
+	printf("    tcpeek -i eth0 inbound-filter:IN@*:* outbound-filter:OUT@192.168.0.100:*,192.168.0.200:*\n");
 }
 
 static void
