@@ -114,7 +114,7 @@ tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression
 	}
 	lnklist_iter_init(list);
 	addr = lnklist_iter_next(list);
-	if(strisequal(addr, "*")) {
+	if(strisequal(addr, "*") || strisequal(addr, "%")) {
 		rule->addr.s_addr = htonl(INADDR_ANY);
 	}
 	else {
@@ -137,11 +137,10 @@ tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression
 			lnklist_destroy_with_destructor(list, free);
 			return -1;
 		}
-fprintf(stderr, "%s/%u\n", inet_ntoa(rule->addr), rule->prefix);
 	}
 	while(lnklist_iter_hasnext(list)) {
 		port = lnklist_iter_next(list);
-		if(strisequal(port, "*")) {
+		if(strisequal(port, "*") || strisequal(port, "%")) {
 			portno = 0;
 		}
 		else {
