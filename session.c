@@ -5,6 +5,7 @@ tcpeek_session_destroy(struct tcpeek_session *session) {
 	if (!session) {
 		return;
 	}
+	lnklist_destroy(session->stat);
 	lnklist_destroy_with_destructor(session->sequence.segments[0], free);
 	lnklist_destroy_with_destructor(session->sequence.segments[1], free);
 	hashtable_remove(g.session.table, &session->key, sizeof(session->key));
@@ -34,7 +35,6 @@ tcpeek_session_get(struct tcpeek_segment *segment) {
 struct tcpeek_session *
 tcpeek_session_open(struct tcpeek_segment *segment, struct lnklist *stat) {
 	struct tcpeek_session *session;
-	struct tcpeek_stat *_stat;
 
 	session = (struct tcpeek_session *)malloc(sizeof(struct tcpeek_session));
 	if(!session) {
@@ -52,51 +52,13 @@ tcpeek_session_open(struct tcpeek_segment *segment, struct lnklist *stat) {
 	session->sequence.timestamp[0] = segment->timestamp;
 	session->sequence.timestamp[1] = segment->timestamp;
 	session->stat = stat;
-	lnklist_iter_init(session->stat);
-	while(lnklist_iter_hasnext(session->stat)) {
-		_stat = lnklist_iter_next(session->stat);
-		_stat->session.total++;
-		_stat->session.active++;
-		if(_stat->session.active > _stat->session.max) {
-			_stat->session.max = _stat->session.active;
-		}
-	}
+	tcpeek_stat_session_open(session);
 	return hashtable_put(g.session.table, &session->key, sizeof(session->key), session);
 }
 
 void
 tcpeek_session_close(struct tcpeek_session *session) {
-	struct timeval difftime;
-	struct tcpeek_stat *stat;
-
-	if(session->reason == TCPEEK_SESSION_REASON_TIMEOUT) {
-		lnklist_iter_init(session->stat);
-		while(lnklist_iter_hasnext(session->stat)) {
-			stat = lnklist_iter_next(session->stat);
-			stat->session.timeout++;
-			stat->session.active--;
-		}
-	}
-	else if(session->reason == TCPEEK_SESSION_REASON_CANCEL) {
-		lnklist_iter_init(session->stat);
-		while(lnklist_iter_hasnext(session->stat)) {
-			stat = lnklist_iter_next(session->stat);
-			stat->session.cancel++;
-			stat->session.active--;
-		}
-	}
-	else {
-		lnklist_iter_init(session->stat);
-		while(lnklist_iter_hasnext(session->stat)) {
-			stat = lnklist_iter_next(session->stat);
-			stat->session.active--;
-			tvsub(&session->sequence.timestamp[1], &session->sequence.timestamp[0], &difftime);
-			if(stat->lifetime.max.tv_sec < difftime.tv_sec || (stat->lifetime.max.tv_sec == difftime.tv_sec && stat->lifetime.max.tv_usec < difftime.tv_usec)) {
-				stat->lifetime.max = difftime;
-			}
-			tvadd(&stat->lifetime.total, &difftime);
-		}
-	}
+	tcpeek_stat_session_close(session);
 	tcpeek_session_print(session);
 	tcpeek_session_destroy(session);
 }
@@ -149,14 +111,9 @@ tcpeek_session_isowner(struct tcpeek_session *session, struct tcpeek_segment *se
 
 struct tcpeek_segment *
 tcpeek_session_add_segment(struct tcpeek_session *session, struct tcpeek_segment *segment) {
-	struct tcpeek_stat *stat;
 	int self;
 
-	lnklist_iter_init(session->stat);
-	while(lnklist_iter_hasnext(session->stat)) {
-		stat = lnklist_iter_next(session->stat);
-		stat->segment.total++;
-	}
+	tcpeek_stat_segment_add(session);
 	session->sequence.timestamp[1] = segment->timestamp;
 	self = tcpeek_session_isowner(session, segment) ^ 0x01;
 	return lnklist_add_tail(session->sequence.segments[self], memdup(segment, sizeof(struct tcpeek_segment)));
@@ -165,7 +122,6 @@ tcpeek_session_add_segment(struct tcpeek_session *session, struct tcpeek_segment
 int
 tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
-	struct tcpeek_stat *stat;
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.state[self] == TCPEEK_TCP_CLOSED) {
@@ -178,12 +134,7 @@ tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *s
 		}
 	}
 	else if (session->sequence.fseq[self] == ntohl(segment->tcp.hdr.th_seq) && session->sequence.fack[self] == ntohl(segment->tcp.hdr.th_ack)) {
-		lnklist_iter_init(session->stat);
-		while(lnklist_iter_hasnext(session->stat)) {
-			stat = lnklist_iter_next(session->stat);
-			stat->segment.dupsyn++;
-		}
-		session->counter.dupsyn++;
+		tcpeek_stat_segment_dupsyn(session);
 	}
 	else {
 		lprintf(LOG_WARNING, "%s [warning] Duplicate connection.", __func__);
@@ -195,7 +146,6 @@ tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *s
 int
 tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
-	struct tcpeek_stat *stat;
 	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
@@ -211,12 +161,7 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 		session->sequence.lack[self] = ntohl(segment->tcp.hdr.th_ack);
 	}
 	else if (ntohl(segment->tcp.hdr.th_ack) == session->sequence.fseq[peer] + 1) {
-		lnklist_iter_init(session->stat);
-		while(lnklist_iter_hasnext(session->stat)) {
-			stat = lnklist_iter_next(session->stat);
-			stat->segment.dupsynack++;
-		}
-		session->counter.dupsynack++;
+		tcpeek_stat_segment_dupsynack(session);
 	}
 	else {
 		snprintf(msg, sizeof(msg), "%s: sequence error. %d/%d", __func__, session->sequence.state[self], session->sequence.state[peer]);
@@ -229,19 +174,13 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 int
 tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
-	struct tcpeek_stat *stat;
 	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.lseq[self] > ntohl(segment->tcp.hdr.th_seq)) {
 		if (segment->tcp.psize) {
 			if (tcpeek_session_recv_isretransmit(session, segment)) {
-				lnklist_iter_init(session->stat);
-				while(lnklist_iter_hasnext(session->stat)) {
-					stat = lnklist_iter_next(session->stat);
-					stat->segment.retrans++;
-				}
-				session->counter.retrans++;
+				tcpeek_stat_segment_retrans(session);
 			}
 		}
 		return 0;
@@ -254,12 +193,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
  		if (session->sequence.state[peer] == TCPEEK_TCP_ESTABLISHED) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
-					lnklist_iter_init(session->stat);
-					while(lnklist_iter_hasnext(session->stat)) {
-						stat = lnklist_iter_next(session->stat);
-						stat->segment.dupack++;
-					}
-					session->counter.dupack++;
+					tcpeek_stat_segment_dupack(session);
 					return 0;
 				}
 			}
@@ -293,12 +227,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 		if (session->sequence.state[peer] == TCPEEK_TCP_CLOSE_WAIT) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
-					lnklist_iter_init(session->stat);
-					while(lnklist_iter_hasnext(session->stat)) {
-						stat = lnklist_iter_next(session->stat);
-						stat->segment.dupack++;
-					}
-					session->counter.dupack++;
+					tcpeek_stat_segment_dupack(session);
 					return 0;
 				}
 			}
@@ -328,12 +257,7 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 		if (session->sequence.state[peer] == TCPEEK_TCP_FIN_WAIT2) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
-					lnklist_iter_init(session->stat);
-					while(lnklist_iter_hasnext(session->stat)) {
-						stat = lnklist_iter_next(session->stat);
-						stat->segment.dupack++;
-					}
-					session->counter.dupack++;
+					tcpeek_stat_segment_dupack(session);
 					return 0;
 				}
 			}
@@ -477,7 +401,7 @@ int
 tcpeek_session_recv_rst(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
 
-	session->counter.rst++;
+	tcpeek_stat_segment_rst(session);
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	session->sequence.state[self] = TCPEEK_TCP_CLOSED;
 	session->sequence.state[peer] = TCPEEK_TCP_CLOSED;

@@ -102,7 +102,6 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	uint8_t *payload;
 	struct tcpeek_session *session;
 	struct lnklist *stat;
-	struct tcpeek_stat *_stat;
 	int err;
 
 	memset(&segment, 0x00, sizeof(segment));
@@ -158,12 +157,7 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	}
 	tcpeek_session_add_segment(session, &segment);
 	if(err) {
-		lnklist_iter_init(session->stat);
-		while(lnklist_iter_hasnext(session->stat)) {
-			_stat = lnklist_iter_next(session->stat);
-			_stat->segment.err++;
-		}
-		session->counter.err++;
+		tcpeek_stat_segment_err(session);
 	}
 	if (tcpeek_session_isclosed(session)) {
 		tcpeek_session_close(session);
@@ -243,37 +237,37 @@ tcpeek_print_summary(void) {
 		if(!(stat = filter->stat)) {
 			continue;
 		}
-		if(stat->session.total - stat->session.active - stat->session.timeout > 0) {
-			tmp = (stat->lifetime.total.tv_sec * 1000) + (stat->lifetime.total.tv_usec / 1000);
-			tmp = tmp / (stat->session.total - stat->session.active - stat->session.timeout);
-			stat->lifetime.avg.tv_sec = tmp / 1000;
-			stat->lifetime.avg.tv_usec = (tmp % 1000) * 1000;
+		if(stat[0].session.total - stat[0].session.active - stat[0].session.timeout > 0) {
+			tmp = (stat[0].lifetime.total.tv_sec * 1000) + (stat[0].lifetime.total.tv_usec / 1000);
+			tmp = tmp / (stat[0].session.total - stat[0].session.active - stat[0].session.timeout);
+			stat[0].lifetime.avg.tv_sec = tmp / 1000;
+			stat[0].lifetime.avg.tv_usec = (tmp % 1000) * 1000;
 		}
 		lprintf(LOG_INFO, "----------------------------");
 		lprintf(LOG_INFO, " %s", filter->name);
 		lprintf(LOG_INFO, "----------------------------");
 /*
 		lprintf(LOG_INFO, " packet");
-		lprintf(LOG_INFO, "              cap : %7d", stat->packet.cap);
-		lprintf(LOG_INFO, "              tcp : %7d", stat->packet.tcp);
-		lprintf(LOG_INFO, "              oos : %7d", stat->packet.oos);
-		lprintf(LOG_INFO, "              err : %7d", stat->packet.err);
+		lprintf(LOG_INFO, "              cap : %7d", stat[0].packet.cap);
+		lprintf(LOG_INFO, "              tcp : %7d", stat[0].packet.tcp);
+		lprintf(LOG_INFO, "              oos : %7d", stat[0].packet.oos);
+		lprintf(LOG_INFO, "              err : %7d", stat[0].packet.err);
 */
 		lprintf(LOG_INFO, " session");
-		lprintf(LOG_INFO, "            total : %7d", stat->session.total);
-		lprintf(LOG_INFO, "              max : %7d", stat->session.max);
-		lprintf(LOG_INFO, "           active : %7d", stat->session.active);
-		lprintf(LOG_INFO, "          timeout : %7d", stat->session.timeout);
+		lprintf(LOG_INFO, "            total : %7d", stat[0].session.total);
+		lprintf(LOG_INFO, "              max : %7d", stat[0].session.max);
+		lprintf(LOG_INFO, "           active : %7d", stat[0].session.active);
+		lprintf(LOG_INFO, "          timeout : %7d", stat[0].session.timeout);
 		lprintf(LOG_INFO, " lifetime");
-		lprintf(LOG_INFO, "              avg : %3d.%03d", (int)stat->lifetime.avg.tv_sec, (int)(stat->lifetime.avg.tv_usec / 1000));
-		lprintf(LOG_INFO, "              max : %3d.%03d", (int)stat->lifetime.max.tv_sec, (int)(stat->lifetime.max.tv_usec / 1000));
+		lprintf(LOG_INFO, "              avg : %3d.%03d", (int)stat[0].lifetime.avg.tv_sec, (int)(stat[0].lifetime.avg.tv_usec / 1000));
+		lprintf(LOG_INFO, "              max : %3d.%03d", (int)stat[0].lifetime.max.tv_sec, (int)(stat[0].lifetime.max.tv_usec / 1000));
 		lprintf(LOG_INFO, " segment");
-		lprintf(LOG_INFO, "            total : %7d", stat->segment.total);
-		lprintf(LOG_INFO, "              err : %7d", stat->segment.err);
-		lprintf(LOG_INFO, "           dupsyn : %7d", stat->segment.dupsyn);
-		lprintf(LOG_INFO, "        dupsynack : %7d", stat->segment.dupsynack);
-		lprintf(LOG_INFO, "           dupack : %7d", stat->segment.dupack);
-		lprintf(LOG_INFO, "          retrans : %7d", stat->segment.retrans);
+		lprintf(LOG_INFO, "            total : %7d", stat[0].segment.total);
+		lprintf(LOG_INFO, "              err : %7d", stat[0].segment.err);
+		lprintf(LOG_INFO, "           dupsyn : %7d", stat[0].segment.dupsyn);
+		lprintf(LOG_INFO, "        dupsynack : %7d", stat[0].segment.dupsynack);
+		lprintf(LOG_INFO, "           dupack : %7d", stat[0].segment.dupack);
+		lprintf(LOG_INFO, "          retrans : %7d", stat[0].segment.retrans);
 	}
 	lprintf(LOG_INFO, "============================");
 }

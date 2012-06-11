@@ -121,3 +121,68 @@ tvadd(struct timeval *a, struct timeval *b) {
 	}
 	return a;
 }
+
+ssize_t
+recvsz(int socket, void *buffer, size_t length, int flags, int timeout) {
+	struct pollfd pfd[1];
+	size_t done = 0;
+	int ready, ret;
+
+	pfd[0].fd = socket;
+	pfd[0].events = POLLIN;
+	while(done < length) {
+		ready = poll(pfd, sizeof(pfd) / sizeof(struct pollfd), timeout);
+		if(ready == -1) {
+			if(errno != EINTR) {
+				return -1;
+			}
+		}
+		else if(ready == 0) {
+			errno = ETIMEDOUT;
+			return -1;
+		}
+		else {
+			ret = recv(socket, (caddr_t)buffer + done, length - done, flags);
+			if(ret == -1) {
+				if(errno != EINTR) {
+					return -1;
+				}
+			}
+			else if(ret == 0) {
+				break;
+			}
+			else {
+				done += ret;
+			}
+		}
+	}
+	return done;
+}
+
+ssize_t
+recvln(int socket, char *buffer, size_t length, int flags, int *fin, int timeout) {
+	size_t done = 0;
+	ssize_t ret;
+
+	while(done < length - 1) {
+		ret = recvsz(socket, buffer + done, sizeof(char), flags, timeout);
+		if(ret == -1) {
+			if(errno != EINTR) {
+				return -1;
+			}
+		}
+		else if(ret == 0) {   
+			if(fin) {
+				*fin = 1;
+			}
+			break;
+		}
+		else {
+			if(++done >= 2 && buffer[done - 1] == 0x0a && buffer[done - 2] == 0x0d) {
+				break;
+			}
+		}
+	}
+	buffer[done] = 0x00;
+	return done;
+}

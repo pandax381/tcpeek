@@ -1,12 +1,13 @@
 #include "tcpeek.h"
 
 static void
-tcpeek_listener_stat_json(int soc);
+tcpeek_listener_stat_json(int soc, const char *method);
 
 void *
 tcpeek_listener_thread(void *arg) {
 	struct pollfd pfds[1];
 	int ready, acc;
+	char method[128];
 
 	listen(g.soc, SOMAXCONN);
 	pfds[0].fd = g.soc;
@@ -26,7 +27,9 @@ tcpeek_listener_thread(void *arg) {
 			if(acc == -1) {
 				continue;
 			}
-			tcpeek_listener_stat_json(acc);
+			if(recvln(acc, method, sizeof(method), 0, NULL, 1000) != -1) {
+				tcpeek_listener_stat_json(acc, strtrim(method));
+			}
 			close(acc);
 		}
 	}
@@ -34,7 +37,7 @@ tcpeek_listener_thread(void *arg) {
 }
 
 static void
-tcpeek_listener_stat_json(int soc) {
+tcpeek_listener_stat_json(int soc, const char *method) {
 	struct tcpeek_filter *filter;
 	struct tcpeek_stat *stat;
 	uint64_t tmp;
@@ -46,7 +49,10 @@ tcpeek_listener_stat_json(int soc) {
 	lnklist_iter_init(g.filter);
 	while(lnklist_iter_hasnext(g.filter)) {
 		filter = lnklist_iter_next(g.filter);
-		stat = filter->stat;
+		if(!filter->stat) {
+			continue;
+		}
+		stat = strisequal(method, "REFRESH") ? &filter->stat[1]: &filter->stat[0];
 		if(stat->session.total - stat->session.active - stat->session.timeout > 0) {
 			tmp = (stat->lifetime.total.tv_sec * 1000) + (stat->lifetime.total.tv_usec / 1000);
 			tmp = tmp / (stat->session.total - stat->session.active - stat->session.timeout);
@@ -77,6 +83,10 @@ tcpeek_listener_stat_json(int soc) {
 			isfirst ? "" : ",", filter->name, session, lifetime, segment
 		);
 		send(soc, buf, strlen(buf), 0);
+		if(strisequal(method, "REFRESH")) {
+			memset(stat, 0x00, sizeof(struct tcpeek_stat));
+			stat->session.active = filter->stat[0].session.active; 
+		}
 		if(isfirst) isfirst = 0;
 	}
 	send(soc, "]", 1, 0);

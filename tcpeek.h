@@ -102,12 +102,14 @@ struct {
 } g;
 
 struct tcpeek_stat {
+/*
 	struct {
 		uint32_t cap;
 		uint32_t tcp;
 		uint32_t oos;
 		uint32_t err;
 	} packet;
+*/
 	struct {
 		uint32_t total;
 		uint32_t active;
@@ -173,7 +175,6 @@ struct tcpeek_session {
 	} counter;
 	uint32_t reason;
 	struct lnklist *stat;
-	//struct tcpeek_stat *stat;
 };
 
 struct tcpeek_segment_datalink {
@@ -236,6 +237,24 @@ extern struct tcpeek_stat *
 tcpeek_stat_create(void);
 extern void
 tcpeek_stat_destroy(struct tcpeek_stat *stat);
+extern void
+tcpeek_stat_session_open(struct tcpeek_session *session);
+extern void
+tcpeek_stat_session_close(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_add(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_dupsyn(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_dupsynack(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_dupack(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_retrans(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_rst(struct tcpeek_session *session);
+extern void
+tcpeek_stat_segment_err(struct tcpeek_session *session);
 
 // session.c
 extern void
@@ -310,5 +329,9 @@ extern struct timeval *
 tvsub(struct timeval *a, struct timeval *b, struct timeval *res);
 extern struct timeval *
 tvadd(struct timeval *a, struct timeval *b);
+extern ssize_t
+recvsz(int socket, void *buffer, size_t length, int flags, int timeout);
+extern ssize_t
+recvln(int socket, char *buffer, size_t length, int flags, int *fin, int timeout);
 
 #endif
