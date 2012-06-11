@@ -166,8 +166,9 @@ tcpeek_filter_parse_rule(struct tcpeek_filter_rule *rule, const char *expression
 	return 0;
 }
 
-struct tcpeek_filter *
+struct lnklist *
 tcpeek_filter_lookup(struct tcpeek_segment *segment) {
+	struct lnklist *dst = NULL;
 	struct tcpeek_filter *filter;
 	struct tcpeek_filter_rule *rule;
 	uint16_t *port;
@@ -198,12 +199,20 @@ tcpeek_filter_lookup(struct tcpeek_segment *segment) {
 			while(lnklist_iter_hasnext(rule->port)) {
 				port = lnklist_iter_next(rule->port);
 				if(*port == 0 || *port == segment->tcp.hdr.th_dport) {
-					return filter->stat ? filter : NULL;
+					if(filter->stat) {
+						if(!dst) {
+							dst = lnklist_create();
+						}
+						lnklist_add_tail(dst, filter->stat);
+					}
+					else {
+						return NULL;
+					}
 				}
 			}
 		}
 	}
-	return NULL;
+	return dst;
 }
 
 static uint32_t

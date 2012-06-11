@@ -101,7 +101,8 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	struct tcpeek_segment segment;
 	uint8_t *payload;
 	struct tcpeek_session *session;
-	struct tcpeek_filter *filter;
+	struct lnklist *stat;
+	struct tcpeek_stat *_stat;
 	int err;
 
 	memset(&segment, 0x00, sizeof(segment));
@@ -117,12 +118,12 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 			pthread_mutex_unlock(&g.session.mutex);
 			return;
 		}
-		filter = tcpeek_filter_lookup(&segment);
-		if(!filter) {
+		stat = tcpeek_filter_lookup(&segment);
+		if(!stat) {
 			pthread_mutex_unlock(&g.session.mutex);
 			return;
 		}
-		session = tcpeek_session_open(&segment, filter->stat);
+		session = tcpeek_session_open(&segment, stat);
 		if(!session) {
 			lprintf(LOG_WARNING, "%s: [warning] %s", __func__, "session add error.");
 			pthread_mutex_unlock(&g.session.mutex);
@@ -157,7 +158,11 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	}
 	tcpeek_session_add_segment(session, &segment);
 	if(err) {
-		session->stat->segment.err++;
+		lnklist_iter_init(session->stat);
+		while(lnklist_iter_hasnext(session->stat)) {
+			_stat = lnklist_iter_next(session->stat);
+			_stat->segment.err++;
+		}
 		session->counter.err++;
 	}
 	if (tcpeek_session_isclosed(session)) {

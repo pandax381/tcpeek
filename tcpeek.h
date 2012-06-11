@@ -172,7 +172,8 @@ struct tcpeek_session {
 		uint32_t err;
 	} counter;
 	uint32_t reason;
-	struct tcpeek_stat *stat;
+	struct lnklist *stat;
+	//struct tcpeek_stat *stat;
 };
 
 struct tcpeek_segment_datalink {
@@ -227,7 +228,7 @@ extern void
 tcpeek_filter_rule_destroy(struct tcpeek_filter_rule *rule);
 extern int
 tcpeek_filter_parse(struct tcpeek_filter *filter, const char *expression);
-extern struct tcpeek_filter *
+extern struct lnklist *
 tcpeek_filter_lookup(struct tcpeek_segment *segment);
 
 // stat.c
@@ -242,7 +243,7 @@ tcpeek_session_destroy(struct tcpeek_session *session);
 extern struct tcpeek_session *
 tcpeek_session_get(struct tcpeek_segment *segment);
 extern struct tcpeek_session *
-tcpeek_session_open(struct tcpeek_segment *segment, struct tcpeek_stat *stat);
+tcpeek_session_open(struct tcpeek_segment *segment, struct lnklist *stats);
 extern void
 tcpeek_session_close(struct tcpeek_session *session);
 extern void

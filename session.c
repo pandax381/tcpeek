@@ -32,8 +32,9 @@ tcpeek_session_get(struct tcpeek_segment *segment) {
 }
 
 struct tcpeek_session *
-tcpeek_session_open(struct tcpeek_segment *segment, struct tcpeek_stat *stat) {
+tcpeek_session_open(struct tcpeek_segment *segment, struct lnklist *stat) {
 	struct tcpeek_session *session;
+	struct tcpeek_stat *_stat;
 
 	session = (struct tcpeek_session *)malloc(sizeof(struct tcpeek_session));
 	if(!session) {
@@ -51,10 +52,14 @@ tcpeek_session_open(struct tcpeek_segment *segment, struct tcpeek_stat *stat) {
 	session->sequence.timestamp[0] = segment->timestamp;
 	session->sequence.timestamp[1] = segment->timestamp;
 	session->stat = stat;
-	session->stat->session.total++;
-	session->stat->session.active++;
-	if(session->stat->session.active > session->stat->session.max) {
-		session->stat->session.max = session->stat->session.active;
+	lnklist_iter_init(session->stat);
+	while(lnklist_iter_hasnext(session->stat)) {
+		_stat = lnklist_iter_next(session->stat);
+		_stat->session.total++;
+		_stat->session.active++;
+		if(_stat->session.active > _stat->session.max) {
+			_stat->session.max = _stat->session.active;
+		}
 	}
 	return hashtable_put(g.session.table, &session->key, sizeof(session->key), session);
 }
@@ -64,31 +69,34 @@ tcpeek_session_close(struct tcpeek_session *session) {
 	struct timeval difftime;
 	struct tcpeek_stat *stat;
 
-	stat = session->stat;
-	stat->session.active--;
 	if(session->reason == TCPEEK_SESSION_REASON_TIMEOUT) {
-		stat->session.timeout++;
+		lnklist_iter_init(session->stat);
+		while(lnklist_iter_hasnext(session->stat)) {
+			stat = lnklist_iter_next(session->stat);
+			stat->session.timeout++;
+			stat->session.active--;
+		}
 	}
 	else if(session->reason == TCPEEK_SESSION_REASON_CANCEL) {
-		stat->session.cancel++;
+		lnklist_iter_init(session->stat);
+		while(lnklist_iter_hasnext(session->stat)) {
+			stat = lnklist_iter_next(session->stat);
+			stat->session.cancel++;
+			stat->session.active--;
+		}
 	}
 	else {
-		tvsub(&session->sequence.timestamp[1], &session->sequence.timestamp[0], &difftime);
-		if(stat->lifetime.max.tv_sec < difftime.tv_sec || (stat->lifetime.max.tv_sec == difftime.tv_sec && stat->lifetime.max.tv_usec < difftime.tv_usec)) {
-			stat->lifetime.max = difftime;
+		lnklist_iter_init(session->stat);
+		while(lnklist_iter_hasnext(session->stat)) {
+			stat = lnklist_iter_next(session->stat);
+			stat->session.active--;
+			tvsub(&session->sequence.timestamp[1], &session->sequence.timestamp[0], &difftime);
+			if(stat->lifetime.max.tv_sec < difftime.tv_sec || (stat->lifetime.max.tv_sec == difftime.tv_sec && stat->lifetime.max.tv_usec < difftime.tv_usec)) {
+				stat->lifetime.max = difftime;
+			}
+			tvadd(&stat->lifetime.total, &difftime);
 		}
-		tvadd(&stat->lifetime.total, &difftime);
 	}
-	/*
-	stat->segment.total += (lnklist_size(session->sequence.segments[0]) + lnklist_size(session->sequence.segments[1]));
-	stat->segment.err += session->counter.err;
-	if(session->counter.dupsyn || session->counter.dupsynack || session->counter.dupack || session->counter.retrans) {
-		stat->segment.dupsyn += session->counter.dupsyn;
-		stat->segment.dupsynack += session->counter.dupsynack;
-		stat->segment.dupack += session->counter.dupack;
-		stat->segment.retrans += session->counter.retrans;
-	}
-	*/
 	tcpeek_session_print(session);
 	tcpeek_session_destroy(session);
 }
@@ -141,19 +149,23 @@ tcpeek_session_isowner(struct tcpeek_session *session, struct tcpeek_segment *se
 
 struct tcpeek_segment *
 tcpeek_session_add_segment(struct tcpeek_session *session, struct tcpeek_segment *segment) {
+	struct tcpeek_stat *stat;
 	int self;
-	struct tcpeek_segment *_segment;
 
-	session->stat->segment.total++;
+	lnklist_iter_init(session->stat);
+	while(lnklist_iter_hasnext(session->stat)) {
+		stat = lnklist_iter_next(session->stat);
+		stat->segment.total++;
+	}
 	session->sequence.timestamp[1] = segment->timestamp;
-	_segment = memdup(segment, sizeof(struct tcpeek_segment));
 	self = tcpeek_session_isowner(session, segment) ^ 0x01;
-	return lnklist_add(session->sequence.segments[self], _segment, lnklist_size(session->sequence.segments[self]));
+	return lnklist_add_tail(session->sequence.segments[self], memdup(segment, sizeof(struct tcpeek_segment)));
 }
 
 int
 tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	struct tcpeek_stat *stat;
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.state[self] == TCPEEK_TCP_CLOSED) {
@@ -166,7 +178,11 @@ tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *s
 		}
 	}
 	else if (session->sequence.fseq[self] == ntohl(segment->tcp.hdr.th_seq) && session->sequence.fack[self] == ntohl(segment->tcp.hdr.th_ack)) {
-		session->stat->segment.dupsyn++;
+		lnklist_iter_init(session->stat);
+		while(lnklist_iter_hasnext(session->stat)) {
+			stat = lnklist_iter_next(session->stat);
+			stat->segment.dupsyn++;
+		}
 		session->counter.dupsyn++;
 	}
 	else {
@@ -179,6 +195,7 @@ tcpeek_session_recv_syn(struct tcpeek_session *session, struct tcpeek_segment *s
 int
 tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	struct tcpeek_stat *stat;
 	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
@@ -194,7 +211,11 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 		session->sequence.lack[self] = ntohl(segment->tcp.hdr.th_ack);
 	}
 	else if (ntohl(segment->tcp.hdr.th_ack) == session->sequence.fseq[peer] + 1) {
-		session->stat->segment.dupack++;
+		lnklist_iter_init(session->stat);
+		while(lnklist_iter_hasnext(session->stat)) {
+			stat = lnklist_iter_next(session->stat);
+			stat->segment.dupsynack++;
+		}
 		session->counter.dupsynack++;
 	}
 	else {
@@ -208,13 +229,18 @@ tcpeek_session_recv_synack(struct tcpeek_session *session, struct tcpeek_segment
 int
 tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *segment) {
 	int self, peer;
+	struct tcpeek_stat *stat;
 	char msg[128];
 
 	peer = (self = tcpeek_session_isowner(session, segment) ^ 0x01) ^ 0x01;
 	if (session->sequence.lseq[self] > ntohl(segment->tcp.hdr.th_seq)) {
 		if (segment->tcp.psize) {
 			if (tcpeek_session_recv_isretransmit(session, segment)) {
-				session->stat->segment.retrans++;
+				lnklist_iter_init(session->stat);
+				while(lnklist_iter_hasnext(session->stat)) {
+					stat = lnklist_iter_next(session->stat);
+					stat->segment.retrans++;
+				}
 				session->counter.retrans++;
 			}
 		}
@@ -228,7 +254,11 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
  		if (session->sequence.state[peer] == TCPEEK_TCP_ESTABLISHED) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
-					session->stat->segment.dupack++;
+					lnklist_iter_init(session->stat);
+					while(lnklist_iter_hasnext(session->stat)) {
+						stat = lnklist_iter_next(session->stat);
+						stat->segment.dupack++;
+					}
 					session->counter.dupack++;
 					return 0;
 				}
@@ -263,7 +293,11 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 		if (session->sequence.state[peer] == TCPEEK_TCP_CLOSE_WAIT) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
-					session->stat->segment.dupack++;
+					lnklist_iter_init(session->stat);
+					while(lnklist_iter_hasnext(session->stat)) {
+						stat = lnklist_iter_next(session->stat);
+						stat->segment.dupack++;
+					}
 					session->counter.dupack++;
 					return 0;
 				}
@@ -294,7 +328,11 @@ tcpeek_session_recv_ack(struct tcpeek_session *session, struct tcpeek_segment *s
 		if (session->sequence.state[peer] == TCPEEK_TCP_FIN_WAIT2) {
 			if (segment->tcp.psize == 0) {
 				if (session->sequence.lack[self] >= ntohl(segment->tcp.hdr.th_ack)) {
-					session->stat->segment.dupack++;
+					lnklist_iter_init(session->stat);
+					while(lnklist_iter_hasnext(session->stat)) {
+						stat = lnklist_iter_next(session->stat);
+						stat->segment.dupack++;
+					}
 					session->counter.dupack++;
 					return 0;
 				}
