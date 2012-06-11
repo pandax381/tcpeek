@@ -45,7 +45,6 @@ tcpeek_init_global(void) {
 	g.option.timeout = 60;
 	g.option.checksum = TCPEEK_CKSUM_IP;
 	g.option.expression = lnklist_create();
-	g.stat = lnklist_create();
 	g.filter = lnklist_create();
 	g.soc = -1;
 }
@@ -53,8 +52,23 @@ tcpeek_init_global(void) {
 static void
 tcpeek_init_option(int argc, char *argv[]) {
 	int opt, index;
+	static struct option long_options[] = {
+		{"user",      1, NULL,   0},
+		{"interface", 1, NULL,   0},
+		{"checksum",  1, NULL,   0},
+		{"socket",    1, NULL,   0},
+		{"timeout",   1, NULL,   0},
+		{"loglevel",  1, NULL,   0},
+		{"quiet",     0, NULL,   0},
+		{"promisc",   0, NULL, 500},
+		{"icmp",      0, NULL, 501},
+		{"tiny",      0, NULL, 502},
+		{"version",   0, NULL,   0},
+		{"help",      0, NULL,   0},
+		{0, 0, 0, 0}
+	};
 
-	while((opt = getopt(argc, argv, "u:i:c:hV")) != -1) {
+	while((opt = getopt_long(argc, argv, "u:i:c:U:t:l:qhV", long_options, NULL)) != -1) {
 		switch(opt) {
 			case 'u':
 				strncpy(g.option.user, optarg, sizeof(g.option.user) - 1);
@@ -63,14 +77,42 @@ tcpeek_init_option(int argc, char *argv[]) {
 				strncpy(g.option.ifname, optarg, sizeof(g.option.ifname) - 1);
 				break;
 			case 'c':
-				// TODO
+				if(!strisequal(optarg, "0") && !strisequal(optarg, "1") && !strisequal(optarg, "2")) {
+					usage();
+					tcpeek_terminate(0);
+					// does not reached.
+				}
+				g.option.checksum = strtol(optarg, NULL, 10);
 				break;
-			case 'h':
-				usage();
-				tcpeek_terminate(0);
-				break; // does not reached.
+			case 'U':
+				strncpy(g.option.socket, optarg, sizeof(g.option.socket) - 1);
+				break;
+			case 't':
+				if(!strisdigit(optarg)) {
+					usage();
+					tcpeek_terminate(0);
+					// does not reached.
+				}
+				g.option.timeout = strtol(optarg, NULL, 10);
+				break;
+			case 'q':
+				g.option.quiet = 1;
+				break;
+			case 500:
+				g.option.promisc = 1;
+				break;
+			case 501:
+				g.option.icmp = 1;
+				break;
+			case 502:
+				g.option.tiny = 1;
+				break;
 			case 'V':
 				version();
+				tcpeek_terminate(0);
+				break; // does not reached.
+			case 'h':
+				usage();
 				tcpeek_terminate(0);
 				break; // does not reached.
 			default:
@@ -140,7 +182,7 @@ tcpeek_init_addr(void) {
 		for(ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
 			if(strisequal(ifa->ifa_name, g.option.ifname) && ifa->ifa_addr->sa_family == AF_INET) {
 				g.addr.unicast.s_addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
-				lprintf(LOG_DEBUG, "%s: [debug] unicast: %s", __func__, inet_ntoa(g.addr.unicast));
+				//lprintf(LOG_DEBUG, "%s: [debug] unicast: %s", __func__, inet_ntoa(g.addr.unicast));
 				break;
 			}
 		}
@@ -166,33 +208,35 @@ tcpeek_init_session(void) {
 
 static void
 tcpeek_init_filter_and_stat(void) {
-	struct tcpeek_stat *stat;
 	struct tcpeek_filter *filter;
 	char *expression;
 
 	lnklist_iter_init(g.option.expression);
 	while(lnklist_iter_hasnext(g.option.expression)) {
 		expression = lnklist_iter_next(g.option.expression);
-		stat = tcpeek_stat_create();
-		if(!lnklist_add_tail(g.stat, stat)) {
-			tcpeek_stat_destroy(stat);
-			lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
-			tcpeek_terminate(1);
-			// does not reached.
-		}
 		filter = tcpeek_filter_create();
-		if(!lnklist_add_tail(g.filter, filter)) {
-			tcpeek_filter_destroy(filter);
-			lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
-			tcpeek_terminate(1);
-			// does not reached.
-		}
 		if(tcpeek_filter_parse(filter, expression) == -1) {
+			tcpeek_filter_destroy(filter);
 			lprintf(LOG_ERR, "%s: [error] filter '%s' parse error.", __func__, expression);
 			tcpeek_terminate(1);
 			// does not reached.
 		}
-		filter->stat = stat;
+		if(filter->stat) {
+			if(!lnklist_add_tail(g.filter, filter)) {
+				tcpeek_filter_destroy(filter);
+				lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
+				tcpeek_terminate(1);
+				// does not reached.
+			}
+		}
+		else {
+			if(!lnklist_add(g.filter, filter, 0)) {
+				tcpeek_filter_destroy(filter);
+				lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
+				tcpeek_terminate(1);
+				// does not reached.
+			}
+		}
 	}
 }
 
@@ -302,20 +346,22 @@ usage(void) {
 	printf("  option:\n");
 	printf("    -u --user=uid         # set uid\n");
 	printf("    -i --interface=dev    # network device (ex: eth0)\n");
+	printf("    -U --socket=path      # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)\n");
 	printf("    -c --checksum=[0|1|2] # ckecksum lookup mode 0=none 1=ip 2=tcp (default: 0)\n");
 	printf("    -t --timeout=sec      # session timeout (default: 60)\n");
-	printf("    -U --socket=path      # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)\n");
-	printf("       --with-icmp        # enable icmp port unreachable lookup\n");
 	printf("    -l --loglevel=LEVEL   # see man syslog (default: LOG_NOTICE)\n");
 	printf("    -q --quite            # quite mode\n");
+	printf("       --promisc          # enable promiscuous capture\n");
+	printf("       --icmp             # enable icmp port unreachable lookup\n");
+	printf("       --tiny             # enable tiny mode (3way-handshake only)\n");
 	printf("    -v --version          # version\n");
 	printf("    -h --help             # help\n");
 	printf("  expression:\n");
 	printf("    filter:dir@addr:port[,port...]\n");
-	printf("  ex)\n");
-	printf("    tcpeek -i eth0 filter:IN@*:80:443\n");
-	printf("    tcpeek -i eth0 filter:OUT@192.168.0.0/24:*\n");
-	printf("    tcpeek -i eth0 inbound-filter:IN@*:* outbound-filter:OUT@192.168.0.100:*,192.168.0.200:*\n");
+	printf("  example) '%%' is the same as wildcard '*'\n");
+	printf("    tcpeek -i eth0 filter:IN@%%:80:443\n");
+	printf("    tcpeek -i eth0 filter:OUT@192.168.0.0/24:%%\n");
+	printf("    tcpeek -i eth0 inbound-filter:IN@%%:%% outbound-filter:OUT@192.168.0.100:%%,192.168.0.200:%%\n");
 }
 
 static void

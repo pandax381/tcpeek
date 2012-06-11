@@ -177,13 +177,13 @@ tcpeek_terminate(int status) {
 	if(g.session.table) {
 		tcpeek_terminate_session();
 	}
-	if(g.stat) {
-		lnklist_destroy_with_destructor(g.stat, (void (*)(void *))tcpeek_stat_destroy);
-	}
 	if(g.filter) {
 		lnklist_destroy_with_destructor(g.filter, (void (*)(void *))tcpeek_filter_destroy);
 	}
-	unlink(TCPEEK_SOCKET_FILE);
+	if(g.soc != -1) {
+		close(g.soc);
+		unlink(TCPEEK_SOCKET_FILE);
+	}
 	//closelog();
 	exit(status);
 	// does not reached.
@@ -235,7 +235,9 @@ tcpeek_print_summary(void) {
 	lnklist_iter_init(g.filter);
 	while(lnklist_iter_hasnext(g.filter)) {
 		filter = lnklist_iter_next(g.filter);
-		stat = filter->stat;
+		if(!(stat = filter->stat)) {
+			continue;
+		}
 		if(stat->session.total - stat->session.active - stat->session.timeout > 0) {
 			tmp = (stat->lifetime.total.tv_sec * 1000) + (stat->lifetime.total.tv_usec / 1000);
 			tmp = tmp / (stat->session.total - stat->session.active - stat->session.timeout);

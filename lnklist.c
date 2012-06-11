@@ -99,7 +99,7 @@ lnklist_add(struct lnklist *obj, void *data, int index) {
 		return NULL;
 	}
 	node->data = data;
-	if(index < obj->size / 2) {
+	if(index == 0 || index < obj->size / 2) {
 		ptr = obj->head;
 		for(offset = 0; offset < index; offset++) {
 			ptr = ptr->next;

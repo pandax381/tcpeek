@@ -14,6 +14,7 @@
 #include <time.h>
 #include <poll.h>
 #include <signal.h>
+#include <limits.h>
 #include <syslog.h>
 #include <pthread.h>
 #include <pwd.h>
@@ -70,11 +71,16 @@ enum {
 
 struct {
 	struct {
-		char ifname[IFNAMSIZ];
-		int  promisc;
-		int  timeout;
-		char checksum;
 		char user[128];
+		char ifname[IFNAMSIZ];
+		char socket[PATH_MAX];
+		int checksum;
+		int timeout;
+		int loglevel;
+		int quiet;
+		int promisc;
+		int icmp;
+		int tiny;
 		struct lnklist *expression;
 	} option;
 	struct {
@@ -90,7 +96,6 @@ struct {
 		struct hashtable *table;
 		struct timeval timestamp;
 	} session;
-	struct lnklist *stat;
 	struct lnklist *filter;
 	int soc;
 	int terminate;

@@ -24,6 +24,7 @@ tcpeek_filter_create(void) {
 void
 tcpeek_filter_destroy(struct tcpeek_filter *filter) {
 	if(filter) {
+		tcpeek_stat_destroy(filter->stat);
 		lnklist_destroy_with_destructor(filter->rule, (void (*)(void *))tcpeek_filter_rule_destroy);
 		free(filter);
 	}
@@ -60,10 +61,16 @@ tcpeek_filter_parse(struct tcpeek_filter *filter, const char *expression) {
 	struct tcpeek_filter_rule *rule;
 
 	sp = (char *)expression;
-	if(!(ep = strchr(sp, ':')) || ep == sp) {
+	if(!(ep = strchr(sp, ':'))) {
 		return -1;
 	}
-	strncpy(filter->name, sp, ep - sp);
+	if(ep != sp) {
+		strncpy(filter->name, sp, ep - sp);
+		filter->stat = tcpeek_stat_create();
+		if(!filter->stat) {
+			return -1;
+		}
+	}
 	sp = ep + 1;
 	if(!(ep = strchr(sp, '@')) || ep == sp) {
 		return -1;
@@ -191,7 +198,7 @@ tcpeek_filter_lookup(struct tcpeek_segment *segment) {
 			while(lnklist_iter_hasnext(rule->port)) {
 				port = lnklist_iter_next(rule->port);
 				if(*port == 0 || *port == segment->tcp.hdr.th_dport) {
-					return filter;
+					return filter->stat ? filter : NULL;
 				}
 			}
 		}
