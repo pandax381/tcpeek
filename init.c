@@ -9,13 +9,13 @@ tcpeek_init_signal(void);
 static void
 tcpeek_init_log(void);
 static void
-tcpeek_init_addr(void);
-static void
 tcpeek_init_session(void);
 static void
 tcpeek_init_filter_and_stat(void);
 static void
 tcpeek_init_pcap(void);
+static void
+tcpeek_init_addr(void);
 static void
 tcpeek_init_setuid(void);
 static void
@@ -31,10 +31,10 @@ tcpeek_init(int argc, char *argv[]) {
 	tcpeek_init_option(argc, argv);
 	tcpeek_init_signal();
 	tcpeek_init_log();
-	tcpeek_init_addr();
 	tcpeek_init_session();
 	tcpeek_init_filter_and_stat();
 	tcpeek_init_pcap();
+	tcpeek_init_addr();
 	tcpeek_init_setuid();
 	tcpeek_init_socket();
 }
@@ -45,6 +45,8 @@ tcpeek_init_global(void) {
 	g.option.timeout = 60;
 	g.option.checksum = TCPEEK_CKSUM_IP;
 	g.option.expression = lnklist_create();
+	lnklist_add_tail(g.option.expression, strdup("inbound:IN@*:*"));
+	lnklist_add_tail(g.option.expression, strdup("outbound:OUT@*:*"));
 	g.filter = lnklist_create();
 	g.soc = -1;
 }
@@ -124,11 +126,6 @@ tcpeek_init_option(int argc, char *argv[]) {
 	for(index = optind; index < argc; index++){
 		lnklist_add(g.option.expression, strdup(argv[index]), lnklist_size(g.option.expression));
 	}
-	if(lnklist_size(g.option.expression) < 1) {
-		usage();
-		tcpeek_terminate(1);
-		// does not reached.
-	}
 }
 
 static void
@@ -172,27 +169,6 @@ tcpeek_init_signal(void) {
 static void
 tcpeek_init_log(void) {
 	//openlog(PACKAGE_NAME, LOG_NDELAY | LOG_PERROR, LOG_DAEMON);
-}
-
-static void
-tcpeek_init_addr(void) {
-	struct ifaddrs *ifap, *ifa = NULL;
-
-	if(getifaddrs(&ifap) != -1) {
-		for(ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
-			if(strisequal(ifa->ifa_name, g.option.ifname) && ifa->ifa_addr->sa_family == AF_INET) {
-				g.addr.unicast.s_addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
-				//lprintf(LOG_DEBUG, "%s: [debug] unicast: %s", __func__, inet_ntoa(g.addr.unicast));
-				break;
-			}
-		}
-	}
-	freeifaddrs(ifap);
-	if(!ifa) {
-		lprintf(LOG_DEBUG, "%s: [error] '%s' not found", __func__, g.option.ifname);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
 }
 
 static void
@@ -277,6 +253,27 @@ tcpeek_init_pcap(void) {
 	if(g.pcap.datalink != DLT_EN10MB && g.pcap.datalink != DLT_LINUX_SLL) {
 		lprintf(LOG_ERR, "%s: [error] not support datalink %s (%s)", __func__,
 			pcap_datalink_val_to_name(g.pcap.datalink), pcap_datalink_val_to_description(g.pcap.datalink));
+		tcpeek_terminate(1);
+		// does not reached.
+	}
+}
+
+static void
+tcpeek_init_addr(void) {
+	struct ifaddrs *ifap, *ifa = NULL;
+
+	if(getifaddrs(&ifap) != -1) {
+		for(ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+			if(strisequal(ifa->ifa_name, g.option.ifname) && ifa->ifa_addr->sa_family == AF_INET) {
+				g.addr.unicast.s_addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
+				//lprintf(LOG_DEBUG, "%s: [debug] unicast: %s", __func__, inet_ntoa(g.addr.unicast));
+				break;
+			}
+		}
+	}
+	freeifaddrs(ifap);
+	if(!ifa) {
+		lprintf(LOG_DEBUG, "%s: [error] '%s' not found", __func__, g.option.ifname);
 		tcpeek_terminate(1);
 		// does not reached.
 	}
