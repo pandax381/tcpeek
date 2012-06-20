@@ -71,10 +71,30 @@ tcpeek_session_close(struct tcpeek_session *session) {
 	lnklist_iter_init(session->stat);
 	while(lnklist_iter_hasnext(session->stat)) {
 		stat = lnklist_iter_next(session->stat);
-		stat->total++;
-		if(session->counter.dupsyn) stat->dupsyn++;
-		if(session->counter.dupsynack) stat->dupsynack++;
-		if(session->counter.dupack) stat->dupack++;
+		if(session->failure) {
+			stat->failure.total++;
+			if(session->failure == TCPEEK_SESSION_FAILURE_TIMEOUT) {
+				stat->failure.timeout++;
+			}
+			else if(session->failure == TCPEEK_SESSION_FAILURE_REJECT) {
+				stat->failure.reject++;
+			}
+			else if(session->failure == TCPEEK_SESSION_FAILURE_UNREACH) {
+				stat->failure.unreach++;
+			}
+		}
+		else {
+			stat->success.total++;
+			if(session->counter.dupsyn) {
+				stat->success.dupsyn++;
+			}
+			if(session->counter.dupsynack) {
+				stat->success.dupsynack++;
+			}
+			if(session->counter.dupack) {
+				stat->success.dupack++;
+			}
+		}
 	}
 	tcpeek_session_print(session);
 	hashtable_remove(g.session.table, &session->key, sizeof(session->key));
@@ -83,6 +103,7 @@ tcpeek_session_close(struct tcpeek_session *session) {
 
 void
 tcpeek_session_timeout(struct tcpeek_session *session) {
+	session->failure = TCPEEK_SESSION_FAILURE_TIMEOUT;
 	gettimeofday(&session->sequence.timestamp[1], NULL);
 	tcpeek_session_close(session);
 }
@@ -236,8 +257,24 @@ tcpeek_session_recv_rst(struct tcpeek_session *session, struct tcpeek_segment *s
 	session->sequence.timestamp[1] = segment->timestamp;
 	session->sequence.state[self] = TCPEEK_TCP_CLOSED;
 	session->sequence.state[peer] = TCPEEK_TCP_CLOSED;
-	session->counter.rst++;
+	session->failure = TCPEEK_SESSION_FAILURE_REJECT;
 	return 0;
+}
+
+static char *
+tcpeek_session_result2str(int code) {
+	switch(code) {
+		case 0:
+			return "     success     ";
+		case TCPEEK_SESSION_FAILURE_TIMEOUT:
+			return "failure (timeout)";
+		case TCPEEK_SESSION_FAILURE_REJECT:
+			return "failure (reject) ";
+		case TCPEEK_SESSION_FAILURE_UNREACH:
+			return "failure (unreach)";
+		default:
+			return "failure (unknown)";
+	}
 }
 
 void
@@ -249,13 +286,13 @@ tcpeek_session_print(struct tcpeek_session *session) {
 	struct timeval difftime;
 
 	if(firsttime && firsttime--) {
-		lprintf(LOG_INFO, " TIME(s) |       TIMESTAMP       |      SRC IP:PORT            DST IP:PORT     | SYN  S/A  ACK ");
-		lprintf(LOG_INFO, "-----------------------------------------------------------------------------------------------");
+		lprintf(LOG_INFO, " TIME(s) |       TIMESTAMP       |      SRC IP:PORT            DST IP:PORT     |      RESULTS      | DUP (SYN  S/A  ACK) ");
+		lprintf(LOG_INFO, "-------------------------------------------------------------------------------------------------------------------------");
 	}
 	tvsub(&session->sequence.timestamp[1], &session->sequence.timestamp[0], &difftime);
 	localtime_r(&session->sequence.timestamp[0].tv_sec, &tm);
 	strftime(timestamp, sizeof(timestamp), "%y-%m-%d %T", &tm);
-	lprintf(LOG_INFO, "%4d.%03d | %s.%03d | %15s:%-5u %15s:%-5u | %3u  %3u  %3u ",
+	lprintf(LOG_INFO, "%4d.%03d | %s.%03d | %15s:%-5u %15s:%-5u | %s |      %3u  %3u  %3u ",
 		(int)(difftime.tv_sec),
 		(int)(difftime.tv_usec / 1000),
 		timestamp,
@@ -264,6 +301,7 @@ tcpeek_session_print(struct tcpeek_session *session) {
 		ntohs(session->key.port[0]),
 		inet_ntop(AF_INET, &session->key.addr[1], dst, sizeof(dst)),
 		ntohs(session->key.port[1]),
+		tcpeek_session_result2str(session->failure),
 		session->counter.dupsyn,
 		session->counter.dupsynack,
 		session->counter.dupack

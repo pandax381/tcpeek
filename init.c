@@ -42,8 +42,9 @@ tcpeek_init(int argc, char *argv[]) {
 static void
 tcpeek_init_global(void) {
 	memset(&g, 0x00, sizeof(g));
-	g.option.timeout = 60;
+	g.option.timeout = 30;
 	g.option.checksum = TCPEEK_CKSUM_IP;
+	strncpy(g.option.socket, TCPEEK_SOCKET_FILE, sizeof(g.option.socket) - 1);
 	g.option.expression = lnklist_create();
 	lnklist_add_tail(g.option.expression, strdup("RX:RX@%:%"));
 	lnklist_add_tail(g.option.expression, strdup("TX:TX@%:%"));
@@ -170,7 +171,7 @@ tcpeek_init_filter_and_stat(void) {
 
 static void
 tcpeek_init_pcap(void) {
-	char *ifname, errmsg[PCAP_ERRBUF_SIZE], expression[] = "tcp";
+	char *ifname, errmsg[PCAP_ERRBUF_SIZE], expression[] = "tcp or icmp";
 	struct bpf_program bpf;
 
 	if(strisempty(g.option.ifname)) {

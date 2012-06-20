@@ -24,6 +24,7 @@
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/in.h>
+#include <netinet/ip_icmp.h>
 #include <netinet/tcp.h>
 #include <pcap/pcap.h>
 #include <pcap/sll.h>
@@ -49,8 +50,9 @@
 #define TCPEEK_FILTER_DIR_RX 1
 #define TCPEEK_FILTER_DIR_TX 2
 
-#define TCPEEK_SESSION_REASON_TIMEOUT 1
-#define TCPEEK_SESSION_REASON_CANCEL  2
+#define TCPEEK_SESSION_FAILURE_TIMEOUT 1
+#define TCPEEK_SESSION_FAILURE_REJECT  2
+#define TCPEEK_SESSION_FAILURE_UNREACH 3
 
 #define TCPEEK_CKSUM_NONE 0x00
 #define TCPEEK_CKSUM_IP   0x01
@@ -97,10 +99,18 @@ struct {
 } g;
 
 struct tcpeek_stat {
-	uint32_t total;
-	uint32_t dupsyn;
-	uint32_t dupsynack;
-	uint32_t dupack;
+	struct {
+		uint32_t total;
+		uint32_t dupsyn;
+		uint32_t dupsynack;
+		uint32_t dupack;
+	} success;
+	struct {
+		uint32_t total;
+		uint32_t timeout;
+		uint32_t reject;
+		uint32_t unreach;
+	} failure;
 };
 
 struct tcpeek_filter {
@@ -135,8 +145,8 @@ struct tcpeek_session {
 		uint32_t dupsyn;
 		uint32_t dupsynack;
 		uint32_t dupack;
-		uint32_t rst;
 	} counter;
+	uint16_t failure;
 	struct lnklist *stat;
 };
 
@@ -162,6 +172,7 @@ struct tcpeek_segment_tcp {
 
 struct tcpeek_segment {
 	struct timeval timestamp;
+	int icmp_unreach;
 	struct tcpeek_segment_tcp tcp;
 };
 
@@ -204,6 +215,8 @@ extern struct tcpeek_session *
 tcpeek_session_open(struct tcpeek_segment *segment, struct lnklist *stats);
 extern void
 tcpeek_session_close(struct tcpeek_session *session);
+extern void
+tcpeek_session_timeout(struct tcpeek_session *session);
 extern int
 tcpeek_session_isestablished(struct tcpeek_session *session);
 extern int

@@ -105,6 +105,12 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 			return;
 		}
 	}
+	if(segment.icmp_unreach) {
+		session->failure = TCPEEK_SESSION_FAILURE_UNREACH;
+		tcpeek_session_close(session);
+		pthread_mutex_unlock(&g.session.mutex);
+		return;
+	}
 	switch(segment.tcp.hdr.th_flags & (TH_SYN | TH_ACK | TH_RST | TH_FIN)) {
 		case TH_SYN:
 			tcpeek_session_recv_syn(session, &segment);
@@ -116,6 +122,7 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 			tcpeek_session_recv_ack(session, &segment);
 			break;
 		case TH_RST:
+		case TH_RST | TH_ACK:
 			tcpeek_session_recv_rst(session, &segment);
 			break;
 		default:
@@ -188,24 +195,30 @@ tcpeek_print_summary(void) {
 	strftime(to, sizeof(to), "%Y-%m-%d %T", localtime_r(&now.tv_sec, &tm));
 	tvsub(&now, &g.session.timestamp, &difftime);
 	lprintf(LOG_INFO, "");
-	lprintf(LOG_INFO, "====== TCPEEK SUMMARY ======");
-	lprintf(LOG_INFO, " from : %s", from);
-	lprintf(LOG_INFO, "   to : %s", to);
-	lprintf(LOG_INFO, " time : %3d.%03d", (int)difftime.tv_sec, (int)(difftime.tv_usec / 1000));
+	lprintf(LOG_INFO, "========== TCPEEK SUMMARY ==========");
+	lprintf(LOG_INFO, "     from : %s", from);
+	lprintf(LOG_INFO, "       to : %s", to);
+	lprintf(LOG_INFO, "     time : %9d.%03d (sec)", (int)difftime.tv_sec, (int)(difftime.tv_usec / 1000));
 	lnklist_iter_init(g.filter);
 	while(lnklist_iter_hasnext(g.filter)) {
 		filter = lnklist_iter_next(g.filter);
 		if(!(stat = filter->stat)) {
 			continue;
 		}
-		lprintf(LOG_INFO, "----------------------------");
+		lprintf(LOG_INFO, "------------------------------------");
 		lprintf(LOG_INFO, " %s", filter->name);
-		lprintf(LOG_INFO, "   Total %d session", stat[0].total);
-		lprintf(LOG_INFO, "     SYN duplicate : %6d", stat[0].dupsyn);
-		lprintf(LOG_INFO, "     S/A duplicate : %6d", stat[0].dupsynack);
-		lprintf(LOG_INFO, "     ACK duplicate : %6d", stat[0].dupack);
+		lprintf(LOG_INFO, "   Success: %d session", stat[0].success.total);
+		lprintf(LOG_INFO, "     SYN Segment Duplicate : %6d", stat[0].success.dupsyn);
+		lprintf(LOG_INFO, "     S/A Segment Duplicate : %6d", stat[0].success.dupsynack);
+		lprintf(LOG_INFO, "     ACK Segment Duplicate : %6d", stat[0].success.dupack);
+		lprintf(LOG_INFO, "   Failure: %d session", stat[0].failure.total);
+		lprintf(LOG_INFO, "     Connection Timed Out  : %6d", stat[0].failure.timeout);
+		lprintf(LOG_INFO, "     Connection Rejected   : %6d", stat[0].failure.reject);
+		if(g.option.icmp) {
+			lprintf(LOG_INFO, "     ICMP Unreachable      : %6d", stat[0].failure.unreach);
+		}
 	}
-	lprintf(LOG_INFO, "============================");
+	lprintf(LOG_INFO, "====================================");
 }
 
 void

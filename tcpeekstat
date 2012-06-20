@@ -68,14 +68,13 @@ def exec_gmetric(stat):
 	for _filter in stat:
 		for name in _filter.keys():
 			for section in _filter[name].keys():
-				if section != "segment":
-					continue
 				for item in _filter[name][section].keys():
-					if item != "dupsyn" and item != "dupsynack" and item != "dupack" and item != "retrans":
-						continue
-					cmd = "%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section, item]), _filter[name][section][item])
+					if item == 'total':
+						cmd = "%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section]), _filter[name][section][item])
+					else:
+						cmd = "%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section, item]), _filter[name][section][item])
 					print cmd
-					os.system(cmd)
+					#os.system(cmd)
 
 def print_stat(stat):
 	print "====== TCPEEK SUMMARY ======"
@@ -93,7 +92,7 @@ def print_stat(stat):
 def main():
 	init()
 	msg = getstat()
-	print msg
+	#print msg
 	data = json.loads(msg)
 	if use_gmetric:
 		exec_gmetric(data)

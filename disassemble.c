@@ -65,7 +65,7 @@ tcpeek_disassemble_ip(const uint8_t *packet, uint16_t plen, int datalink, struct
 			return NULL;
 		}
 	}
-	if(ip->ip_p != IPPROTO_TCP) {
+	if(ip->ip_p != IPPROTO_TCP && (g.option.icmp ? ip->ip_p != IPPROTO_ICMP : 1)) {
 		return NULL;
 	}
 	memcpy(&dst->hdr, ip, sizeof(struct ip));
@@ -74,12 +74,20 @@ tcpeek_disassemble_ip(const uint8_t *packet, uint16_t plen, int datalink, struct
 
 static uint8_t *
 tcpeek_disassemble_tcp(const uint8_t *packet, uint16_t plen, int datalink, struct tcpeek_segment_tcp *dst) {
+	uint8_t *payload;
 	struct tcphdr *tcphdr;
-	struct ip *ip;
 	uint16_t hlen, tcplen, sum;
+	struct ip *ip;
 	uint32_t pseudo = 0;
 
-	tcphdr = (struct tcphdr *)tcpeek_disassemble_ip(packet, plen, datalink, &dst->ip);
+	payload = tcpeek_disassemble_ip(packet, plen, datalink, &dst->ip);
+	if(!payload) {
+		return NULL;
+	}
+	if(dst->ip.hdr.ip_p == IPPROTO_ICMP) {
+		return payload;
+	}
+	tcphdr = (struct tcphdr *)payload;
 	if(!tcphdr) {
 		return NULL;
 	}
@@ -113,5 +121,41 @@ tcpeek_disassemble_tcp(const uint8_t *packet, uint16_t plen, int datalink, struc
 
 uint8_t *
 tcpeek_disassemble(const uint8_t *data, uint16_t size, int datalink, struct tcpeek_segment *dst) {
-	return tcpeek_disassemble_tcp(data, size, datalink, &dst->tcp);
+	uint8_t *payload;
+	struct icmp *icmp;
+	struct ip *ip;
+	uint16_t icmplen, sum;
+
+	payload = tcpeek_disassemble_tcp(data, size, datalink, &dst->tcp);
+	if(!payload) {
+		return NULL;
+	}
+	if(dst->tcp.ip.hdr.ip_p == IPPROTO_ICMP) {
+		icmp = (struct icmp *)payload;
+		size -= (caddr_t)icmp - (caddr_t)data;
+		if(size < sizeof(struct icmp)) {
+			return NULL;
+		}
+		ip = &dst->tcp.ip.hdr;
+		icmplen = ntohs(ip->ip_len) - (ip->ip_hl << 2);
+		if(size < icmplen) {
+			return NULL;
+		}
+		if(g.option.checksum & TCPEEK_CKSUM_IP) {
+			sum = cksum16((uint16_t *)icmp, icmplen, 0);
+			if(sum != 0) {
+				lprintf(LOG_WARNING, "%s [warning] ICMP checksum error. %04X (%04X)", __func__, sum, icmp->icmp_cksum);
+				return NULL;
+			}
+		}
+		if(icmp->icmp_type != ICMP_UNREACH || (icmp->icmp_code != ICMP_UNREACH_PORT && icmp->icmp_code != ICMP_UNREACH_HOST)) {
+			return NULL;
+		}
+		dst->icmp_unreach = 1;
+		ip = (struct ip *)icmp->icmp_data;
+		memcpy(&dst->tcp.ip.hdr, icmp->icmp_data, sizeof(struct ip));
+		memcpy(&dst->tcp.hdr, icmp->icmp_data + (ip->ip_hl << 2), 8);
+		return (uint8_t *)((caddr_t)icmp + icmplen);
+	}
+	return payload;
 }
