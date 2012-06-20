@@ -16,25 +16,16 @@ main(int argc, char *argv[]) {
 	tcpeek_init(argc, argv);
 	tcpeek_execute();
 	tcpeek_terminate(0);
-	return 0; // does not reached.
+	return 0; /* does not reached */
 }
 
 void
 tcpeek_signal_handler(int signo) {
-	switch(signo){
-		case SIGINT:
-		case SIGTERM:
-			if(g.pcap.pcap)
-				pcap_breakloop(g.pcap.pcap); // signal safe.
-			g.terminate = 1;
-			break;
-		case SIGPIPE:
-		case SIGUSR1:
-		case SIGUSR2:
-		case SIGALRM:
-		default:
-			// ignore
-			break;
+	if(signo == SIGINT || signo == SIGTERM) {
+		g.terminate = 1;
+		if(g.pcap.pcap) {
+			pcap_breakloop(g.pcap.pcap); /* signal safe */
+		}
 	}
 }
 
@@ -43,56 +34,42 @@ tcpeek_execute(void) {
 	int err, ready;
 	pthread_t checker, listener;
 	struct pollfd pfds[1];
-	struct lnklist *keys;
-	struct hashtable_key *key;
-	struct tcpeek_session *session;
 
 	err = pthread_create(&checker, NULL, tcpeek_checker_thread, NULL);
 	if(err) {
-		lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(err));
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("%s", strerror(err));
 	}
 	err = pthread_create(&listener, NULL, tcpeek_listener_thread, NULL);
 	if(err) {
-		lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(err));
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("%s", strerror(err));
 	}
 	tcpeek_print_pcap_status();
 	gettimeofday(&g.session.timestamp, NULL);
 	pfds[0].fd = pcap_fileno(g.pcap.pcap);
 	pfds[0].events = POLLIN;
 	while(!g.terminate) {
-		ready = poll(pfds, sizeof(pfds) / sizeof(struct pollfd), 1000);
-		if(ready == 0) {
-			// timeout.
-		}
-		else if(ready == -1) {
+		if((ready = poll(pfds, sizeof(pfds) / sizeof(struct pollfd), 1000)) == -1) {
 			if(errno != EINTR) {
-				lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(errno));
-				tcpeek_terminate(1);
-				break; // does not reached.
+				error_abort("%s", strerror(err));
 			}
+		}
+		else if(ready == 0) {
+			/* timeout */
 		}
 		else {
 			if(pcap_dispatch(g.pcap.pcap, 0, tcpeek_fetch, NULL) == -1) {
-				lprintf(LOG_ERR, "%s: [error] %s", __func__, pcap_geterr(g.pcap.pcap));
-				tcpeek_terminate(1);
-				break; // does not reached.
+				error_abort("%s", pcap_geterr(g.pcap.pcap));
 			}
 		}
 	}
-	pthread_join(checker, NULL);
-	pthread_join(listener, NULL);
-	keys = hashtable_get_keys(g.session.table);
-	lnklist_iter_init(keys);
-	while(lnklist_iter_hasnext(keys)) {
-		key = lnklist_iter_next(keys);
-		session = hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key));
-		tcpeek_session_cancel(session);
+	err = pthread_join(checker, NULL);
+	if(err) {
+		lprintf(LOG_WARNING, "%s", strerror(err));
 	}
-	lnklist_destroy(keys);
+	err = pthread_join(listener, NULL);
+	if(err) {
+		lprintf(LOG_WARNING, "%s", strerror(err));
+	}
 	tcpeek_print_summary();
 }
 
@@ -102,7 +79,6 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 	uint8_t *payload;
 	struct tcpeek_session *session;
 	struct lnklist *stat;
-	int err;
 
 	memset(&segment, 0x00, sizeof(segment));
 	segment.timestamp = pkthdr->ts;
@@ -124,42 +100,28 @@ tcpeek_fetch(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *pktdat
 		}
 		session = tcpeek_session_open(&segment, stat);
 		if(!session) {
-			lprintf(LOG_WARNING, "%s: [warning] %s", __func__, "session add error.");
+			lprintf(LOG_WARNING, "%s", "session open error.");
 			pthread_mutex_unlock(&g.session.mutex);
 			return;
 		}
 	}
-	//tcpeek_print_segment(&segment, tcpeek_session_isowner(session, &segment) ^ 0x01, "");
 	switch(segment.tcp.hdr.th_flags & (TH_SYN | TH_ACK | TH_RST | TH_FIN)) {
 		case TH_SYN:
-			err = tcpeek_session_recv_syn(session, &segment);
-			break;
-		case TH_ACK:
-			err = tcpeek_session_recv_ack(session, &segment);
+			tcpeek_session_recv_syn(session, &segment);
 			break;
 		case TH_SYN | TH_ACK:
-			err = tcpeek_session_recv_synack(session, &segment);
+			tcpeek_session_recv_synack(session, &segment);
 			break;
-		case TH_FIN:
-			err = tcpeek_session_recv_fin(session, &segment);
-			break;
-		case TH_FIN | TH_ACK:
-			err = tcpeek_session_recv_finack(session, &segment);
+		case TH_ACK:
+			tcpeek_session_recv_ack(session, &segment);
 			break;
 		case TH_RST:
-		case TH_RST | TH_ACK:
-			err = tcpeek_session_recv_rst(session, &segment);
+			tcpeek_session_recv_rst(session, &segment);
 			break;
 		default:
-			//tcpeek_session_recv_error(session, &segment);
-			err = 1;
 			break;
 	}
-	tcpeek_session_add_segment(session, &segment);
-	if(err) {
-		tcpeek_stat_segment_err(session);
-	}
-	if (tcpeek_session_isclosed(session)) {
+	if(tcpeek_session_isestablished(session) || tcpeek_session_isclosed(session)) {
 		tcpeek_session_close(session);
 	}
 	pthread_mutex_unlock(&g.session.mutex);
@@ -183,21 +145,21 @@ tcpeek_terminate(int status) {
 		close(g.soc);
 		unlink(TCPEEK_SOCKET_FILE);
 	}
-	//closelog();
 	exit(status);
-	// does not reached.
 }
 
 static void
 tcpeek_terminate_session(void) {
 	struct lnklist *keys;
 	struct hashtable_key *key;
+	struct tcpeek_session *session;
 
 	keys = hashtable_get_keys(g.session.table);
 	lnklist_iter_init(keys);
 	while(lnklist_iter_hasnext(keys)) {
 		key = lnklist_iter_remove_next(keys);
-		tcpeek_session_destroy(hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key)));
+		session = hashtable_get(g.session.table, hashtable_key_get_key(key), hashtable_key_get_len(key));
+		tcpeek_session_close(session);
 	}
 	lnklist_destroy(keys);
 	hashtable_destroy(g.session.table);
@@ -220,7 +182,6 @@ tcpeek_print_summary(void) {
 	char from[128], to[128];
 	struct tcpeek_filter *filter;
 	struct tcpeek_stat *stat;
-	uint64_t tmp;
 
 	gettimeofday(&now, NULL);
 	strftime(from, sizeof(from), "%Y-%m-%d %T", localtime_r(&g.session.timestamp.tv_sec, &tm));
@@ -237,37 +198,12 @@ tcpeek_print_summary(void) {
 		if(!(stat = filter->stat)) {
 			continue;
 		}
-		if(stat[0].session.total - stat[0].session.active - stat[0].session.timeout > 0) {
-			tmp = (stat[0].lifetime.total.tv_sec * 1000) + (stat[0].lifetime.total.tv_usec / 1000);
-			tmp = tmp / (stat[0].session.total - stat[0].session.active - stat[0].session.timeout);
-			stat[0].lifetime.avg.tv_sec = tmp / 1000;
-			stat[0].lifetime.avg.tv_usec = (tmp % 1000) * 1000;
-		}
 		lprintf(LOG_INFO, "----------------------------");
 		lprintf(LOG_INFO, " %s", filter->name);
-		lprintf(LOG_INFO, "----------------------------");
-/*
-		lprintf(LOG_INFO, " packet");
-		lprintf(LOG_INFO, "              cap : %7d", stat[0].packet.cap);
-		lprintf(LOG_INFO, "              tcp : %7d", stat[0].packet.tcp);
-		lprintf(LOG_INFO, "              oos : %7d", stat[0].packet.oos);
-		lprintf(LOG_INFO, "              err : %7d", stat[0].packet.err);
-*/
-		lprintf(LOG_INFO, " session");
-		lprintf(LOG_INFO, "            total : %7d", stat[0].session.total);
-		lprintf(LOG_INFO, "              max : %7d", stat[0].session.max);
-		lprintf(LOG_INFO, "           active : %7d", stat[0].session.active);
-		lprintf(LOG_INFO, "          timeout : %7d", stat[0].session.timeout);
-		lprintf(LOG_INFO, " lifetime");
-		lprintf(LOG_INFO, "              avg : %3d.%03d", (int)stat[0].lifetime.avg.tv_sec, (int)(stat[0].lifetime.avg.tv_usec / 1000));
-		lprintf(LOG_INFO, "              max : %3d.%03d", (int)stat[0].lifetime.max.tv_sec, (int)(stat[0].lifetime.max.tv_usec / 1000));
-		lprintf(LOG_INFO, " segment");
-		lprintf(LOG_INFO, "            total : %7d", stat[0].segment.total);
-		lprintf(LOG_INFO, "              err : %7d", stat[0].segment.err);
-		lprintf(LOG_INFO, "           dupsyn : %7d", stat[0].segment.dupsyn);
-		lprintf(LOG_INFO, "        dupsynack : %7d", stat[0].segment.dupsynack);
-		lprintf(LOG_INFO, "           dupack : %7d", stat[0].segment.dupack);
-		lprintf(LOG_INFO, "          retrans : %7d", stat[0].segment.retrans);
+		lprintf(LOG_INFO, "   Total %d session", stat[0].total);
+		lprintf(LOG_INFO, "     SYN duplicate : %6d", stat[0].dupsyn);
+		lprintf(LOG_INFO, "     S/A duplicate : %6d", stat[0].dupsynack);
+		lprintf(LOG_INFO, "     ACK duplicate : %6d", stat[0].dupack);
 	}
 	lprintf(LOG_INFO, "============================");
 }
@@ -280,7 +216,7 @@ tcpeek_print_segment(struct tcpeek_segment *segment, int pos, const char *msg) {
 
 	tcphdr = &segment->tcp.hdr;
 	ip = &segment->tcp.ip.hdr;
-	lprintf(LOG_DEBUG, "%s: [debug] TCP/IP %s:%u %s%c%c%c%c%c%c%s %s:%u (%08X / %08X) %d | %s", __func__,
+	lprintf(LOG_DEBUG, "TCP/IP %s:%u %s%c%c%c%c%c%c%s %s:%u (%08X / %08X) %d | %s",
 		inet_ntop(AF_INET, pos == 0 ? &ip->ip_src : &ip->ip_dst, saddr, sizeof(saddr)),
 		ntohs(pos == 0 ? tcphdr->th_sport : tcphdr->th_dport),
 		pos == 0 ? " " : "<",

@@ -140,7 +140,7 @@ hashtable_put(struct hashtable *obj, const void *key, size_t klen, void *value) 
 		return NULL;
 	}
 	hashtable_entry_set(entry, key, klen, value);
-	lnklist_add(row, entry, lnklist_size(row));
+	lnklist_add_tail(row, entry);
 	obj->num++;
 	return value;
 }
@@ -208,7 +208,7 @@ hashtable_get_keys(struct hashtable *obj) {
 		lnklist_iter_init(row);
 		while(lnklist_iter_hasnext(row)) {
 			entry = (struct hashtable_entry *)lnklist_iter_next(row);
-			lnklist_add(keys, &entry->key, lnklist_size(keys));
+			lnklist_add_tail(keys, &entry->key);
 		}
 	}
 	return keys;

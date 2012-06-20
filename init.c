@@ -45,32 +45,31 @@ tcpeek_init_global(void) {
 	g.option.timeout = 60;
 	g.option.checksum = TCPEEK_CKSUM_IP;
 	g.option.expression = lnklist_create();
-	lnklist_add_tail(g.option.expression, strdup("inbound:IN@*:*"));
-	lnklist_add_tail(g.option.expression, strdup("outbound:OUT@*:*"));
+	lnklist_add_tail(g.option.expression, strdup("RX:RX@%:%"));
+	lnklist_add_tail(g.option.expression, strdup("TX:TX@%:%"));
 	g.filter = lnklist_create();
 	g.soc = -1;
 }
 
 static void
 tcpeek_init_option(int argc, char *argv[]) {
-	int opt, index;
+	int opt;
 	static struct option long_options[] = {
-		{"user",      1, NULL,   0},
-		{"interface", 1, NULL,   0},
-		{"checksum",  1, NULL,   0},
-		{"socket",    1, NULL,   0},
-		{"timeout",   1, NULL,   0},
-		{"loglevel",  1, NULL,   0},
-		{"quiet",     0, NULL,   0},
+		{"user",      1, NULL, 'u'},
+		{"interface", 1, NULL, 'i'},
+		{"checksum",  1, NULL, 'c'},
+		{"socket",    1, NULL, 'U'},
+		{"timeout",   1, NULL, 't'},
+		{"loglevel",  1, NULL, 'l'},
+		{"quiet",     0, NULL, 'q'},
 		{"promisc",   0, NULL, 500},
 		{"icmp",      0, NULL, 501},
-		{"tiny",      0, NULL, 502},
-		{"version",   0, NULL,   0},
-		{"help",      0, NULL,   0},
-		{0, 0, 0, 0}
+		{"help",      0, NULL, 'h'},
+		{"version",   0, NULL, 'v'},
+		{ NULL,       0, NULL,  0 }
 	};
 
-	while((opt = getopt_long(argc, argv, "u:i:c:U:t:l:qhV", long_options, NULL)) != -1) {
+	while((opt = getopt_long_only(argc, argv, "u:i:c:U:t:l:qhv", long_options, NULL)) != -1) {
 		switch(opt) {
 			case 'u':
 				strncpy(g.option.user, optarg, sizeof(g.option.user) - 1);
@@ -82,7 +81,6 @@ tcpeek_init_option(int argc, char *argv[]) {
 				if(!strisequal(optarg, "0") && !strisequal(optarg, "1") && !strisequal(optarg, "2")) {
 					usage();
 					tcpeek_terminate(0);
-					// does not reached.
 				}
 				g.option.checksum = strtol(optarg, NULL, 10);
 				break;
@@ -93,7 +91,6 @@ tcpeek_init_option(int argc, char *argv[]) {
 				if(!strisdigit(optarg)) {
 					usage();
 					tcpeek_terminate(0);
-					// does not reached.
 				}
 				g.option.timeout = strtol(optarg, NULL, 10);
 				break;
@@ -106,63 +103,34 @@ tcpeek_init_option(int argc, char *argv[]) {
 			case 501:
 				g.option.icmp = 1;
 				break;
-			case 502:
-				g.option.tiny = 1;
-				break;
-			case 'V':
-				version();
-				tcpeek_terminate(0);
-				break; // does not reached.
 			case 'h':
 				usage();
 				tcpeek_terminate(0);
-				break; // does not reached.
+			case 'v':
+				version();
+				tcpeek_terminate(0);
 			default:
 				usage();
 				tcpeek_terminate(1);
-				break; // does not reached.
 		}
 	}
-	for(index = optind; index < argc; index++){
-		lnklist_add(g.option.expression, strdup(argv[index]), lnklist_size(g.option.expression));
+	while(optind < argc) {
+		lnklist_add_tail(g.option.expression, strdup(argv[optind++]));
 	}
 }
 
 static void
 tcpeek_init_signal(void) {
+	static int signals[] = {SIGINT, SIGTERM, SIGPIPE, SIGUSR1, SIGUSR2, SIGALRM, 0};
 	struct sigaction sig;
+	int offset;
 
 	memset(&sig, 0, sizeof(sig));
 	sig.sa_handler = tcpeek_signal_handler;
-	if(sigaction(SIGINT,  &sig, NULL) == -1){
-		fprintf(stderr, "%s: sigaction error SIGINT\n", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
-	if(sigaction(SIGTERM, &sig, NULL) == -1){
-		fprintf(stderr, "%s: sigaction error SIGTERM\n", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
-	if(sigaction(SIGPIPE, &sig, NULL) == -1){
-		fprintf(stderr, "%s: sigaction error SIGPIPE\n", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
-	if(sigaction(SIGUSR1, &sig, NULL) == -1){
-		fprintf(stderr, "%s: sigaction error SIGUSR1\n", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
-	if(sigaction(SIGUSR2, &sig, NULL) == -1){
-		fprintf(stderr, "%s: sigaction error SIGUSR2\n", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
-	}
-	if(sigaction(SIGALRM, &sig, NULL) == -1){
-		fprintf(stderr, "%s: sigaction error SIGALRM\n", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
+	for(offset = 0; signals[offset]; offset++) {
+		if(sigaction(signals[offset], &sig, NULL) == -1){
+			error_abort("sigaction: '%d' %s", signals[offset], strerror(errno));
+		}
 	}
 }
 
@@ -175,17 +143,15 @@ static void
 tcpeek_init_session(void) {
 	g.session.table = hashtable_create(TCPEEK_SESSION_TABLE_SIZE);
 	if(!g.session.table) {
-		lprintf(LOG_ERR, "%s: [error] hashtable can't create.", __func__);
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("hashtable can't create.");
 	}
 	pthread_mutex_init(&g.session.mutex, NULL);
 }
 
 static void
 tcpeek_init_filter_and_stat(void) {
-	struct tcpeek_filter *filter;
 	char *expression;
+	struct tcpeek_filter *filter;
 
 	lnklist_iter_init(g.option.expression);
 	while(lnklist_iter_hasnext(g.option.expression)) {
@@ -193,68 +159,45 @@ tcpeek_init_filter_and_stat(void) {
 		filter = tcpeek_filter_create();
 		if(tcpeek_filter_parse(filter, expression) == -1) {
 			tcpeek_filter_destroy(filter);
-			lprintf(LOG_ERR, "%s: [error] filter '%s' parse error.", __func__, expression);
-			tcpeek_terminate(1);
-			// does not reached.
+			error_abort("filter '%s' parse error.", expression);
 		}
-		if(filter->stat) {
-			if(!lnklist_add_tail(g.filter, filter)) {
-				tcpeek_filter_destroy(filter);
-				lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
-				tcpeek_terminate(1);
-				// does not reached.
-			}
-		}
-		else {
-			if(!lnklist_add(g.filter, filter, 0)) {
-				tcpeek_filter_destroy(filter);
-				lprintf(LOG_ERR, "%s: [error] alloc error.", __func__);
-				tcpeek_terminate(1);
-				// does not reached.
-			}
+		if(!lnklist_add(g.filter, filter, filter->stat ? lnklist_size(g.filter) : 0)) {
+			tcpeek_filter_destroy(filter);
+			error_abort("can't allocate.");
 		}
 	}
 }
 
 static void
 tcpeek_init_pcap(void) {
-	char errmsg[PCAP_ERRBUF_SIZE], *ifname, *expression;
+	char *ifname, errmsg[PCAP_ERRBUF_SIZE], expression[] = "tcp";
 	struct bpf_program bpf;
 
-	if(g.option.ifname[0] == '\0') {
+	if(strisempty(g.option.ifname)) {
 		ifname = pcap_lookupdev(errmsg);
 		if(!ifname) {
-			lprintf(LOG_ERR, "%s: [error] %s", __func__, errmsg);
-			tcpeek_terminate(1);
-			// does not reached.
+			error_abort("%s", errmsg);
 		}
 		strncpy(g.option.ifname, ifname, sizeof(g.option.ifname) - 1);
 	}
 	g.pcap.pcap = pcap_open_live(g.option.ifname, 65535, g.option.promisc, 1, errmsg);
 	if(!g.pcap.pcap) {
-		lprintf(LOG_ERR, "%s: [error] %s", __func__, errmsg);
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("%s", errmsg);
 	}
-	expression = "tcp";
 	if(pcap_compile(g.pcap.pcap, &bpf, expression, 0, 0) == -1) {
-		lprintf(LOG_ERR, "%s: [error] %s '%s'", __func__, pcap_geterr(g.pcap.pcap), expression);
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("%s '%s'", pcap_geterr(g.pcap.pcap), expression);
 	}
 	if(pcap_setfilter(g.pcap.pcap, &bpf) == -1){
-		lprintf(LOG_ERR, "%s: [error] %s", __func__, pcap_geterr(g.pcap.pcap));
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("%s", pcap_geterr(g.pcap.pcap));
 	}
 	pcap_freecode(&bpf);
 	g.pcap.snapshot = pcap_snapshot(g.pcap.pcap);
 	g.pcap.datalink = pcap_datalink(g.pcap.pcap);
 	if(g.pcap.datalink != DLT_EN10MB && g.pcap.datalink != DLT_LINUX_SLL) {
-		lprintf(LOG_ERR, "%s: [error] not support datalink %s (%s)", __func__,
-			pcap_datalink_val_to_name(g.pcap.datalink), pcap_datalink_val_to_description(g.pcap.datalink));
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("not support datalink %s (%s)",
+			pcap_datalink_val_to_name(g.pcap.datalink),
+			pcap_datalink_val_to_description(g.pcap.datalink)
+		);
 	}
 }
 
@@ -266,16 +209,13 @@ tcpeek_init_addr(void) {
 		for(ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
 			if(strisequal(ifa->ifa_name, g.option.ifname) && ifa->ifa_addr->sa_family == AF_INET) {
 				g.addr.unicast.s_addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
-				//lprintf(LOG_DEBUG, "%s: [debug] unicast: %s", __func__, inet_ntoa(g.addr.unicast));
 				break;
 			}
 		}
 	}
 	freeifaddrs(ifap);
 	if(!ifa) {
-		lprintf(LOG_DEBUG, "%s: [error] '%s' not found", __func__, g.option.ifname);
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("'%s' not found", g.option.ifname);
 	}
 }
 
@@ -285,35 +225,25 @@ tcpeek_init_setuid(void) {
 	gid_t groups[128];
 	int ngroups;
 
-	if(!strisempty(g.option.user)) {
-		passwd = strisdigit(g.option.user) ? getpwuid((uid_t)strtol(g.option.user, NULL, 10)) : getpwnam(g.option.user);
-		if(!passwd) {
-			fprintf(stderr, "%s: %s\n", __func__, strerror(errno));
-			tcpeek_terminate(1);
-			// does not reached.
-		}
-		ngroups = sizeof(groups);
-		if(getgrouplist(g.option.user, passwd->pw_gid, groups, &ngroups) == -1) {
-			// TODO: retry...
-			fprintf(stderr, "%s: getgrouplist: %s\n", __func__, strerror(errno));
-			tcpeek_terminate(1);
-			// does not reached.
-		}
-		if(setgroups(ngroups, groups) == -1) {
-			fprintf(stderr, "%s: setgroups: %s\n", __func__, strerror(errno));
-			tcpeek_terminate(1);
-			// does not reached.
-		}
-		if(setgid(passwd->pw_gid) == -1) {
-			fprintf(stderr, "%s: setgid: %s\n", __func__, strerror(errno));
-			tcpeek_terminate(1);
-			// does not reached.
-		}
-		if(setuid(passwd->pw_uid) == -1) {
-			fprintf(stderr, "%s: setuid: %s\n", __func__, strerror(errno));
-			tcpeek_terminate(1);
-			// does not reached.
-		}
+	if(strisempty(g.option.user)) {
+		return;
+	}
+	passwd = strisdigit(g.option.user) ? getpwuid((uid_t)strtol(g.option.user, NULL, 10)) : getpwnam(g.option.user);
+	if(!passwd) {
+		error_abort("%s", strerror(errno));
+	}
+	ngroups = sizeof(groups);
+	if(getgrouplist(g.option.user, passwd->pw_gid, groups, &ngroups) == -1) {
+		error_abort("getgrouplist: %s", strerror(errno));
+	}
+	if(setgroups(ngroups, groups) == -1) {
+		error_abort("setgroups: %s", strerror(errno));
+	}
+	if(setgid(passwd->pw_gid) == -1) {
+		error_abort("setgid: %s", strerror(errno));
+	}
+	if(setuid(passwd->pw_uid) == -1) {
+		error_abort("setuid: %s", strerror(errno));
 	}
 }
 
@@ -323,17 +253,13 @@ tcpeek_init_socket(void) {
 
 	g.soc = socket(PF_UNIX, SOCK_STREAM, 0);
 	if(g.soc == -1) {
-		lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(errno));
-		tcpeek_terminate(1);
-		// does not reached.
+		error_abort("socket: %s", strerror(errno));
 	}
 	memset(&sockaddr, 0, sizeof(sockaddr));
 	sockaddr.sun_family = PF_UNIX;
-	strcpy(sockaddr.sun_path, TCPEEK_SOCKET_FILE);
+	strcpy(sockaddr.sun_path, g.option.socket);
 	if(bind(g.soc, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1) {
-			lprintf(LOG_ERR, "%s: [error] %s", __func__, strerror(errno));
-			tcpeek_terminate(1);
-			// does not reached.
+		error_abort("bind: %s", strerror(errno));
 	}
 }
 
@@ -350,9 +276,8 @@ usage(void) {
 	printf("    -q --quite            # quite mode\n");
 	printf("       --promisc          # enable promiscuous capture\n");
 	printf("       --icmp             # enable icmp port unreachable lookup\n");
-	printf("       --tiny             # enable tiny mode (3way-handshake only)\n");
-	printf("    -v --version          # version\n");
 	printf("    -h --help             # help\n");
+	printf("    -v --version          # version\n");
 	printf("  expression:\n");
 	printf("    filter:dir@addr:port[,port...]\n");
 	printf("  example) '%%' is the same as wildcard '*'\n");

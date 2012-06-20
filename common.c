@@ -65,11 +65,7 @@ strsplit(const char *str, const char *sep, size_t num) {
 		piece = ep ? strndup(sp, ep - sp) : strdup(sp);
 		if(!piece || !lnklist_add_tail(dst, piece)) {
 			free(piece);
-			lnklist_iter_init(dst);
-			while(lnklist_iter_hasnext(dst)) {
-				free(lnklist_iter_remove_next(dst));
-			}
-			lnklist_destroy(dst);
+			lnklist_destroy_with_destructor(dst, free);
 			return NULL;
 		}
 		if(!ep) {
@@ -82,7 +78,9 @@ strsplit(const char *str, const char *sep, size_t num) {
 
 void *
 memdup(const void *s, size_t n) {
-	return memcpy(malloc(n), s, n);
+	void *dst;
+
+	return (dst = malloc(n)) ? memcpy(dst, s, n) : NULL;
 }
 
 #ifndef HAVE_STRNDUP

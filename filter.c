@@ -23,8 +23,8 @@ tcpeek_filter_create(void) {
 
 void
 tcpeek_filter_destroy(struct tcpeek_filter *filter) {
-	if(filter) {
-		tcpeek_stat_destroy(filter->stat);
+	if(!filter) {
+		free(filter->stat);
 		lnklist_destroy_with_destructor(filter->rule, (void (*)(void *))tcpeek_filter_rule_destroy);
 		free(filter);
 	}
@@ -66,20 +66,21 @@ tcpeek_filter_parse(struct tcpeek_filter *filter, const char *expression) {
 	}
 	if(ep != sp) {
 		strncpy(filter->name, sp, ep - sp);
-		filter->stat = tcpeek_stat_create();
+		filter->stat = malloc(sizeof(struct tcpeek_stat) * 2);
 		if(!filter->stat) {
 			return -1;
 		}
+		memset(filter->stat, 0x00, sizeof(struct tcpeek_stat) * 2);
 	}
 	sp = ep + 1;
-	if(!(ep = strchr(sp, '@')) || ep == sp) {
+	if(!(ep = strchr(sp, '@')) || ep - sp != 2) {
 		return -1;
 	}
-	if(strncmp(sp, "IN", 2) == 0) {
-		filter->dir = TCPEEK_FILTER_DIR_INBOUND;
+	if(strncmp(sp, "RX", 2) == 0) {
+		filter->dir = TCPEEK_FILTER_DIR_RX;
 	}
-	else if(strncmp(sp, "OUT", 3) == 0) {
-		filter->dir = TCPEEK_FILTER_DIR_OUTBOUND;
+	else if(strncmp(sp, "TX", 2) == 0) {
+		filter->dir = TCPEEK_FILTER_DIR_TX;
 	}
 	else {
 		return -1;
@@ -179,7 +180,7 @@ tcpeek_filter_lookup(struct tcpeek_segment *segment) {
 		lnklist_iter_init(filter->rule);
 		while(lnklist_iter_hasnext(filter->rule)) {
 			rule = lnklist_iter_next(filter->rule);
-			if(filter->dir == TCPEEK_FILTER_DIR_INBOUND) {
+			if(filter->dir == TCPEEK_FILTER_DIR_RX) {
 				if(segment->tcp.ip.hdr.ip_dst.s_addr != g.addr.unicast.s_addr) {
 					continue;
 				}
