@@ -257,7 +257,7 @@ extern int
 strisdigit(const char *str);
 extern struct lnklist *
 strsplit(const char *str, const char *sep, size_t num);
-#ifndef HAVE_STRNDUP
+#ifndef __USE_GNU
 extern char *
 strndup(const char *s1, size_t n);
 #endif

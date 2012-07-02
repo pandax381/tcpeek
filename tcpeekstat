@@ -69,12 +69,10 @@ def exec_gmetric(stat):
 		for name in _filter.keys():
 			for section in _filter[name].keys():
 				for item in _filter[name][section].keys():
-					if item == 'total':
-						cmd = "%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section]), _filter[name][section][item])
-					else:
+					if item == 'reject' or item == 'timeout' or item == 'dupsyn' or item == 'dupsynack':
 						cmd = "%s -n %s -v %u -t uint32" % (gmetric, '_'.join(["tcpeek", name, section, item]), _filter[name][section][item])
-					print cmd
-					#os.system(cmd)
+						print cmd
+						os.system(cmd)
 
 def print_stat(stat):
 	print "====== TCPEEK SUMMARY ======"

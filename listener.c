@@ -63,11 +63,10 @@ tcpeek_listener_stat_json(int soc, const char *method) {
 			stat[0].success.dupsynack - (isrefresh ? stat[1].success.dupsynack : 0),
 			stat[0].success.dupack - (isrefresh ? stat[1].success.dupack : 0)
 		);
-		snprintf(failure, sizeof(failure), "{\"total\":%u,\"timeout\":%u,\"reject\":%u,\"unreach\":%u}",
+		snprintf(failure, sizeof(failure), "{\"total\":%u,\"timeout\":%u,\"reject\":%u}",
 			stat[0].failure.total - (isrefresh ? stat[1].failure.total : 0),
 			stat[0].failure.timeout - (isrefresh ? stat[1].failure.timeout : 0),
-			stat[0].failure.reject - (isrefresh ? stat[1].failure.reject : 0),
-			stat[0].failure.unreach - (isrefresh ? stat[1].failure.unreach : 0)
+			(stat[0].failure.reject - (isrefresh ? stat[1].failure.reject : 0)) + (stat[0].failure.unreach - (isrefresh ? stat[1].failure.unreach : 0))
 		);
 		snprintf(buf, sizeof(buf), "%s{\"%s\":{\"success\":%s,\"failure\":%s}}", isfirst ? "" : ",", filter->name, success, failure);
 		send(soc, buf, strlen(buf), 0);

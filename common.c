@@ -83,7 +83,7 @@ memdup(const void *s, size_t n) {
 	return (dst = malloc(n)) ? memcpy(dst, s, n) : NULL;
 }
 
-#ifndef HAVE_STRNDUP
+#ifndef __USE_GNU
 char *
 strndup(const char *s1, size_t n) {
 	char *dst;
