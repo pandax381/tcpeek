@@ -210,7 +210,6 @@ tcpeek_print_summary(void) {
 		lprintf(LOG_INFO, "   Success: %d session", stat[0].success.total);
 		lprintf(LOG_INFO, "     SYN Segment Duplicate : %6d", stat[0].success.dupsyn);
 		lprintf(LOG_INFO, "     S/A Segment Duplicate : %6d", stat[0].success.dupsynack);
-		lprintf(LOG_INFO, "     ACK Segment Duplicate : %6d", stat[0].success.dupack);
 		lprintf(LOG_INFO, "   Failure: %d session", stat[0].failure.total);
 		lprintf(LOG_INFO, "     Connection Timed Out  : %6d", stat[0].failure.timeout);
 		lprintf(LOG_INFO, "     Connection Rejected   : %6d", stat[0].failure.reject);

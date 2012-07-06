@@ -40,7 +40,8 @@
 	do { fprintf(stderr, "%s: [error] " fmt "\n", __func__, ## __VA_ARGS__); tcpeek_terminate(1); } while(0);
 
 #define lprintf(level, fmt, ...) \
-	fprintf(stderr, "%s: " fmt "\n", __func__, ## __VA_ARGS__)
+	fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+	//fprintf(stderr, "%s: " fmt "\n", __func__, ## __VA_ARGS__)
 
 #define TCPEEK_SOCKET_FILE "/var/run/tcpeek/tcpeek.sock"
 

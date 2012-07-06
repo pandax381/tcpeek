@@ -286,13 +286,13 @@ tcpeek_session_print(struct tcpeek_session *session) {
 	struct timeval difftime;
 
 	if(firsttime && firsttime--) {
-		lprintf(LOG_INFO, " TIME(s) |       TIMESTAMP       |      SRC IP:PORT            DST IP:PORT     |      RESULTS      | DUP (SYN  S/A  ACK) ");
-		lprintf(LOG_INFO, "-------------------------------------------------------------------------------------------------------------------------");
+		lprintf(LOG_INFO, " TIME(s) |       TIMESTAMP       |      SRC IP:PORT            DST IP:PORT     |      RESULTS      | DUP SYN  DUP S/A ");
+		lprintf(LOG_INFO, "----------------------------------------------------------------------------------------------------------------------");
 	}
 	tvsub(&session->sequence.timestamp[1], &session->sequence.timestamp[0], &difftime);
 	localtime_r(&session->sequence.timestamp[0].tv_sec, &tm);
 	strftime(timestamp, sizeof(timestamp), "%y-%m-%d %T", &tm);
-	lprintf(LOG_INFO, "%4d.%03d | %s.%03d | %15s:%-5u %15s:%-5u | %s |      %3u  %3u  %3u ",
+	lprintf(LOG_INFO, "%4d.%03d | %s.%03d | %15s:%-5u %15s:%-5u | %s | %7u  %7u ",
 		(int)(difftime.tv_sec),
 		(int)(difftime.tv_usec / 1000),
 		timestamp,
@@ -303,7 +303,6 @@ tcpeek_session_print(struct tcpeek_session *session) {
 		ntohs(session->key.port[1]),
 		tcpeek_session_result2str(session->failure),
 		session->counter.dupsyn,
-		session->counter.dupsynack,
-		session->counter.dupack
+		session->counter.dupsynack
 	);
 }

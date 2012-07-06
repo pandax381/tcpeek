@@ -1,0 +1,181 @@
+/**************************************************************************/
+/*                                                                        */
+/* tcpeek README                                                          */
+/*                                                                        */
+/*                                           Copyright (C) 2012 KLab Inc. */
+/**************************************************************************/
+
+【はじめに】
+  tcpeek（てぃーしーぴーく）は、TCPのセッション確立（3wayハンドシェイク）時に発生するエラーを監視・集計するネットワークモニタです。
+  以下のような機能があります。
+
+  ・エラー検出 - 接続に失敗したTCPセッションを集計できます
+    ・RSTにより接続拒否されたセッションをカウントします
+    ・ICMP Unreachにより到達不能を検出したセッションをカウントします
+    ・接続がタイムアウトしたセッションをカウントします
+  ・再送検出 - 再送が発生したTCPセッションを集計できます
+    ・SYNセグメントの再送が発生したセッションをカウントします
+    ・SYN/ACKセグメントの再送が発生したセッションをカウントします
+  ・フィルタ - フィルタを指定して個別に集計できます
+    ・通信方向・IPアドレス・ポート番号の組合わせでフィルタを指定します
+    ・複数のフィルタを指定できます
+    ・※ ただしこのポートは除く。といったフィルタも指定できます
+  ・データ出力 - 集計したデータをUNIXドメインソケット経由で出力します
+   ・スクリプトで扱いやすいJSON形式で出力します
+   ・gmetric経由でrrdを出力するためのスクリプト（tcpeekstat）が付属しています
+
+【インストール方法】
+  $ git clone git://github.com/pandax381/tcpeek.git
+  $ cd tcpeek
+  $ ./configure
+  $ make
+  $ sudo make install
+
+【使い方】
+  usage: tcpeek [option]... [expression]...
+    option:
+      -u --user=uid         # 指定したuserにsetuidして動作します
+      -i --interface=dev    # インターフェース名を指定します（例：eth0）
+      -U --socket=path      # UNIXドメインソケットのパスを指定します (デフォルト：/var/run/tcpeek/tcpeek.sock)
+      -c --checksum=[0|1|2] # チェックサムの検証モードを指定します 0=検証なし 1=IPヘッダのみ 2=IPヘッダ＋TCPヘッダ（デフォルト：0）
+      -t --timeout=sec      # セッションのタイムアウト時間（デフォルト：60）
+      -l --loglevel=LEVEL   # SYSLOGレベル（デフォルト：LOG_NOTICE）※ 現状は機能していないです
+      -q --quite            # このオプションを指定すると、リアルタイムのセッション情報出力を抑制します
+         --promisc          # このオプションを指定すると、プロミスキャスモードで動作します
+         --icmp             # このオプションを指定すると、ICMP 到達不能メッセージを解釈するようになります
+      -h --help             # ヘルプを表示して終了します
+      -v --version          # バージョンを表示して終了します
+    expression:
+      [filter]:dir@addr:port[:port...][,...]
+    example) '%' is the same as wildcard '*'
+      tcpeek -i eth0 filter:RX@%:80:443
+      tcpeek -i eth0 filter:TX@192.168.0.0/24:%
+      tcpeek -i eth0 filter1:RX@%:80:443 filter2:TX@192.168.0.0/24:%
+
+  -i オプションでインターフェースだけ指定すればとりあえず動きます。（デフォルトで「RX:RX@*:*」と「TX:TX@*:*」のフィルタが指定されています）
+
+    $ sudo ./tcpeek -i eth0
+
+  expression の指定方法が少し複雑ですが、以下のように指定します。
+
+    フィルタ名:通信方向（RX|TX）@IPアドレス:ポート番号
+
+  フィルタは複数指定できます。
+
+    filter1:RX@192.168.0.1:80 filter2:TX@192.168.0.2:80
+
+  IPアドレスとポート番号は「%」でワールドカードが指定できます。
+
+    filter:TX@%:%
+
+  IPアドレスにはネットワークアドレスも指定できます。
+
+    filter:TX@192.168.0.0/24:%
+
+  ポート番号は「:」区切りで複数指定できます。
+
+    filter:TX@192.168.0.1:80:443:8080
+
+  IPアドレスとポート番号の組合わせは「,」区切りで複数指定できます。
+
+    filter:TX@192.168.0.1:80:443:8080,192.168.0.2:80,192.168.0.3:80:8080
+
+  フィルタ名を省略すると除外フィルタとなり、条件にマッチするセッションは全てのフィルタに記録されません（記述順は関係ありません）
+
+    :RX@*:22 :TX@*:22
+
+  ※ 複数のフィルタにマッチするセッションは、該当する全てのフィルタにて集計されます
+
+【結果出力】
+  tcpeekを実行すると、標準エラーへTCPセッションの情報がリアルタイムで出力されます。
+
+  $ sudo ./tcpeek -i eth0
+  listening on eth0, link-type EN10MB (Ethernet), capture size 65535 bytes
+   TIME(s) |       TIMESTAMP       |      SRC IP:PORT            DST IP:PORT     |      RESULTS      | DUP SYN  DUP S/A
+  ----------------------------------------------------------------------------------------------------------------------
+     0.002 | 12-07-06 16:39:02.552 |   192.168.2.227:48967   192.168.2.202:80    |      success      |       0        0 
+     0.002 | 12-07-06 16:39:02.559 |   192.168.2.227:48968   192.168.2.202:80    |      success      |       0        0 
+     0.002 | 12-07-06 16:39:11.219 |   192.168.2.227:42031   192.168.2.202:443   |      success      |       0        0 
+     0.002 | 12-07-06 16:39:11.273 |   192.168.2.227:48970   192.168.2.202:80    |      success      |       0        0 
+     0.002 | 12-07-06 16:39:11.279 |   192.168.2.227:42033   192.168.2.202:443   |      success      |       0        0 
+     0.002 | 12-07-06 16:39:11.309 |   192.168.2.227:48972   192.168.2.202:80    |      success      |       0        0 
+     0.002 | 12-07-06 16:39:11.323 |   192.168.2.227:42035   192.168.2.202:443   |      success      |       0        0 
+     0.001 | 12-07-06 16:39:11.354 |   192.168.2.227:42036   192.168.2.202:443   |      success      |       0        0 
+     0.002 | 12-07-06 16:39:11.385 |   192.168.2.227:42037   192.168.2.202:443   |      success      |       0        0 
+     0.001 | 12-07-06 16:39:36.254 |   192.168.2.228:62876   192.168.2.227:80    | failure (reject)  |       0        0 
+     0.000 | 12-07-06 16:39:38.160 |   192.168.2.228:62877   192.168.2.227:80    | failure (reject)  |       0        0 
+     0.000 | 12-07-06 16:39:44.689 |   192.168.2.227:56371   192.168.2.228:8080  | failure (reject)  |       0        0
+    39.947 | 12-07-06 16:41:29.723 |   192.168.2.227:58376   192.168.2.207:8080  | failure (timeout) |       2        0 
+
+  TIME(s)      TCPセッションの確立（3wayハンドシェイク）に掛かった時間（秒）
+  TIMESTAMP    TCPセッションが開始された時刻
+  SRC IP:PORT  TCPセッションの始端（クライアント）のIPアドレスとポート番号
+  DST IP:PORT  TCPセッションの終端（サーバ）のIPアドレスとポート番号
+  RESULTS      TCPセッションの確立可否
+  DUP SYN      SYNセグメントが再送された回数（再送が発生していなければ 0）
+  DUP S/A      SYN/ACKセグメントが再送された回数（再送が発生していなければ 0）
+
+【統計出力】
+  Ctrl+C にて、上記の統計情報を出力して終了します。
+
+  ========== TCPEEK SUMMARY ==========
+       from : 2012-07-02 16:48:33      集計開始時刻
+         to : 2012-07-02 16:49:59      集計終了時刻
+       time :        86.106 (sec)      集計時間（秒）
+  ------------------------------------
+   RX                                  フィルタ名
+     Success: 0 session                3wayハンドシェイクが成功したセッション数
+       SYN Segment Duplicate :      0  SYNセグメントの再送が発生したセッション数
+       S/A Segment Duplicate :      0  SYN/ACKセグメントの再送が発生したセッション数
+     Failure: 10 session               3wayハンドシェイクが失敗したセッション数
+       Connection Timed Out  :      0  接続がタイムアウトしたセッション数
+       Connection Rejected   :     10  接続が拒否されたセッション数
+  ------------------------------------
+   TX
+     Success: 783 session
+       SYN Segment Duplicate :      0
+       S/A Segment Duplicate :      0
+     Failure: 0 session
+       Connection Timed Out  :      0
+       Connection Rejected   :      0
+  ------------------------------------
+   http-rx
+     Success: 0 session
+       SYN Segment Duplicate :      0
+       S/A Segment Duplicate :      0
+     Failure: 10 session
+       Connection Timed Out  :      0
+       Connection Rejected   :     10
+  ------------------------------------
+   http-tx
+     Success: 767 session
+       SYN Segment Duplicate :      0
+       S/A Segment Duplicate :      0
+     Failure: 0 session
+       Connection Timed Out  :      0
+       Connection Rejected   :      0
+  ====================================
+
+  この統計情報は、後述する tcpeekstat コマンドを使うことで、tcpeekの実行中にも取得できます。
+
+【tcpeekstat】
+  usage: tcpeekstat [OPTION]
+    [OPTION]
+      -g  --gmetric      # exec gmetric
+      -U  --socket=path  # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)
+      -v  --version      # version
+      -h  --help         # help
+
+  tcpeekstat を実行すると、動作中のtcpeekから統計情報を取得できます。
+
+    $ sudo ./tcpeekstat
+
+  -g オプションを付けて実行すると、gmetricコマンド経由でrrdを出力します。
+
+    $ sudo ./tcpeekstat -g
+
+  ※ -g オプションなしの場合は起動時からの累計、-g オプションありの場合は「前回 -g オプションつきで実行したタイミング」からの差分を出力します
+
+【注意事項】
+  libpcapがインストールされている必要があります（libpcapは最新版の仕様をおすすめします  http://www.tcpdump.org/#latest-release）
+  このソフトウェアを使用して発生したいかなる損害についても作者は責任を負いません。
