@@ -87,10 +87,10 @@ memdup(const void *s, size_t n) {
 char *
 strndup(const char *s1, size_t n) {
 	char *dst;
-
 	dst = malloc(n + 1);
 	if(dst) {
 		strncpy(dst, s1, n);
+		dst[n] = 0x00;
 	}
 	return dst;
 }
