@@ -96,7 +96,9 @@ tcpeek_session_close(struct tcpeek_session *session) {
 			}
 		}
 	}
-	tcpeek_session_print(session);
+    if (!g.option.quiet) {
+        tcpeek_session_print(session);
+    }
 	hashtable_remove(g.session.table, &session->key, sizeof(session->key));
 	tcpeek_session_destroy(session);
 }

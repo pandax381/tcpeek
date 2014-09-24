@@ -1,5 +1,7 @@
 #include "tcpeek.h"
 
+#define DEFAULT_PCAP_SNAPLEN 138
+
 static void
 tcpeek_init_global(void);
 static void
@@ -43,6 +45,7 @@ static void
 tcpeek_init_global(void) {
 	memset(&g, 0x00, sizeof(g));
 	g.option.timeout = 30;
+	g.option.buffer = 2;
 	g.option.checksum = TCPEEK_CKSUM_IP;
 	strncpy(g.option.socket, TCPEEK_SOCKET_FILE, sizeof(g.option.socket) - 1);
 	g.option.expression = lnklist_create();
@@ -61,6 +64,7 @@ tcpeek_init_option(int argc, char *argv[]) {
 		{"checksum",  1, NULL, 'c'},
 		{"socket",    1, NULL, 'U'},
 		{"timeout",   1, NULL, 't'},
+		{"buffer",    1, NULL, 'B'},
 		{"loglevel",  1, NULL, 'l'},
 		{"quiet",     0, NULL, 'q'},
 		{"promisc",   0, NULL, 500},
@@ -70,7 +74,7 @@ tcpeek_init_option(int argc, char *argv[]) {
 		{ NULL,       0, NULL,  0 }
 	};
 
-	while((opt = getopt_long_only(argc, argv, "u:i:c:U:t:l:qhv", long_options, NULL)) != -1) {
+	while((opt = getopt_long_only(argc, argv, "u:i:c:U:t:B:l:qhv", long_options, NULL)) != -1) {
 		switch(opt) {
 			case 'u':
 				strncpy(g.option.user, optarg, sizeof(g.option.user) - 1);
@@ -88,6 +92,13 @@ tcpeek_init_option(int argc, char *argv[]) {
 			case 'U':
 				strncpy(g.option.socket, optarg, sizeof(g.option.socket) - 1);
 				break;
+            case 'B':
+				if(!strisdigit(optarg)) {
+					usage();
+					tcpeek_terminate(0);
+				}
+				g.option.buffer = strtol(optarg, NULL, 10);
+                break;
 			case 't':
 				if(!strisdigit(optarg)) {
 					usage();
@@ -181,10 +192,25 @@ tcpeek_init_pcap(void) {
 		}
 		strncpy(g.option.ifname, ifname, sizeof(g.option.ifname) - 1);
 	}
-	g.pcap.pcap = pcap_open_live(g.option.ifname, 65535, g.option.promisc, 1, errmsg);
+    g.pcap.pcap = pcap_create(g.option.ifname, errmsg);
 	if(!g.pcap.pcap) {
 		error_abort("%s", errmsg);
 	}
+    if(pcap_set_buffer_size(g.pcap.pcap, g.option.buffer * 1024 * 1024) != 0) {
+        error_abort("%s", "can not set buffer size");
+    }
+    if(pcap_set_snaplen(g.pcap.pcap, DEFAULT_PCAP_SNAPLEN) != 0) {
+        error_abort("%s", "can not set snaplen");
+    }
+    if(pcap_set_promisc(g.pcap.pcap, g.option.promisc) != 0) {
+        error_abort("%s", "can not set promiscuous mode");
+    }
+    if(pcap_set_timeout(g.pcap.pcap, 1) != 0) {
+        error_abort("%s", "can not set timeout");
+    }
+    if(pcap_activate(g.pcap.pcap) != 0) {
+        error_abort("%s", pcap_geterr(g.pcap.pcap));
+    }
 	if(pcap_compile(g.pcap.pcap, &bpf, expression, 0, 0) == -1) {
 		error_abort("%s '%s'", pcap_geterr(g.pcap.pcap), expression);
 	}
@@ -273,8 +299,9 @@ usage(void) {
 	printf("    -U --socket=path      # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)\n");
 	printf("    -c --checksum=[0|1|2] # ckecksum lookup mode 0=none 1=ip 2=tcp (default: 0)\n");
 	printf("    -t --timeout=sec      # session timeout (default: 60)\n");
+	printf("    -B --buffer=MB        # libpcap buffer size (default: 2)\n");
 	printf("    -l --loglevel=LEVEL   # see man syslog (default: LOG_NOTICE)\n");
-	printf("    -q --quite            # quite mode\n");
+	printf("    -q --quiet            # quiet mode\n");
 	printf("       --promisc          # enable promiscuous capture\n");
 	printf("       --icmp             # enable icmp port unreachable lookup\n");
 	printf("    -h --help             # help\n");

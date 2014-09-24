@@ -84,6 +84,13 @@ tcpeek_listener_stat_json(int soc, const char *method) {
 		}
 		if(isfirst) isfirst = 0;
 	}
+    if(!strisequal(method, "REFRESH")) {
+        struct pcap_stat ps;
+        memset(&ps, 0, sizeof(ps));
+        pcap_stats(g.pcap.pcap, &ps);
+        snprintf(buf, sizeof(buf), ",{\"pcap\":{\"stats\":{\"recv\":%u,\"drop\":%u,\"ifdrop\":%u}}}", ps.ps_recv, ps.ps_drop, ps.ps_ifdrop);
+        send(soc, buf, strlen(buf), 0);
+    }
 	send(soc, "]", 1, 0);
 	pthread_mutex_unlock(&g.session.mutex);
 }

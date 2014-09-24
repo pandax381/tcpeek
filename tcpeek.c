@@ -174,11 +174,12 @@ tcpeek_terminate_session(void) {
 
 static void
 tcpeek_print_pcap_status(void) {
-	lprintf(LOG_INFO, "listening on %s, link-type %s (%s), capture size %d bytes",
+    lprintf(LOG_INFO, "listening on %s, link-type %s (%s), capture size %d bytes, buffer size %d MB",
 		g.option.ifname,
 		pcap_datalink_val_to_name(g.pcap.datalink),
 		pcap_datalink_val_to_description(g.pcap.datalink),
-		g.pcap.snapshot
+		g.pcap.snapshot,
+        g.option.buffer
 	);
 }
 
@@ -189,7 +190,10 @@ tcpeek_print_summary(void) {
 	char from[128], to[128];
 	struct tcpeek_filter *filter;
 	struct tcpeek_stat *stat;
+    struct pcap_stat ps;
 
+    memset(&ps, 0, sizeof(ps));
+    pcap_stats(g.pcap.pcap, &ps);
 	gettimeofday(&now, NULL);
 	strftime(from, sizeof(from), "%Y-%m-%d %T", localtime_r(&g.session.timestamp.tv_sec, &tm));
 	strftime(to, sizeof(to), "%Y-%m-%d %T", localtime_r(&now.tv_sec, &tm));
@@ -217,6 +221,11 @@ tcpeek_print_summary(void) {
 			lprintf(LOG_INFO, "     ICMP Unreachable      : %6d", stat[0].failure.unreach);
 		}
 	}
+    lprintf(LOG_INFO, "------------------------------------");
+    lprintf(LOG_INFO, " pcap stats");
+    lprintf(LOG_INFO, "   recv   : %u", ps.ps_recv);
+    lprintf(LOG_INFO, "   drop   : %u", ps.ps_drop);
+    lprintf(LOG_INFO, "   ifdrop : %u", ps.ps_ifdrop);
 	lprintf(LOG_INFO, "====================================");
 }
 

@@ -265,7 +265,7 @@ hashtable_entry_destroy(struct hashtable_entry *obj) {
 
 static void *
 hashtable_entry_set(struct hashtable_entry *obj, const void *key, size_t klen, void *value) {
-	void *old_value;
+	void *old_value = NULL;
 
 	if(!obj || !key || !klen) {
 		return NULL;

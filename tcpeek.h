@@ -75,6 +75,7 @@ struct {
 		char socket[PATH_MAX];
 		int checksum;
 		int timeout;
+        int buffer;
 		int loglevel;
 		int quiet;
 		int promisc;
