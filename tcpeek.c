@@ -150,7 +150,7 @@ tcpeek_terminate(int status) {
 	}
 	if(g.soc != -1) {
 		close(g.soc);
-		unlink(TCPEEK_SOCKET_FILE);
+		unlink(g.option.socket);
 	}
 	exit(status);
 }
