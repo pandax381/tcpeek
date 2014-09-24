@@ -286,6 +286,8 @@ tcpeek_init_socket(void) {
 	sockaddr.sun_family = PF_UNIX;
 	strcpy(sockaddr.sun_path, g.option.socket);
 	if(bind(g.soc, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1) {
+        close(g.soc);
+        g.soc = -1;
 		error_abort("bind: %s", strerror(errno));
 	}
 }
