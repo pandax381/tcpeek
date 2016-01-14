@@ -22,7 +22,7 @@ matrix:
       compiler: clang
 
 before_install:
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install libpcap ; fi
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install homebrew/dupes/libpcap ; fi
 
 script:
   - ./autogen.sh
