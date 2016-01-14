@@ -21,11 +21,6 @@ matrix:
     - os: osx
       compiler: clang
 
-before_install:
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew tap homebrew/dupes ; fi
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install homebrew/dupes/xar ; fi
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install homebrew/dupes/libpcap ; fi
-
 script:
   - ./autogen.sh
   - ./configure
