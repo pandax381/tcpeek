@@ -1,12 +1,52 @@
-# ignore execute file
+# Program files
 tcpeek
-# ignore object files
+
+# Config files
+
+# Object files
 *.o
-# ignore autotools files
-.deps/
+*.ko
+*.obj
+*.elf
+*.dSYM
+
+# Libraries
+*.lib
+*.a
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Autotolls files
+.deps
 Makefile
-autom4te.cache
-config.h
-config.log
-config.status
-stamp-h1
+Makefile.in
+/autom4te.cache
+/aclocal.m4
+/compile
+/config.guess
+/config.h
+/config.h.in
+/config.h.in~
+/config.log
+/config.status
+/config.sub
+/configure
+/depcomp
+/install-sh
+/missing
+/stamp-h1
+
+# Other files
+*.swp

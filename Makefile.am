@@ -1,3 +1,7 @@
-sbin_PROGRAMS = tcpeek
-tcpeek_SOURCES = tcpeek.c tcpeek.h init.c disassemble.c session.c cksum.c lnklist.c lnklist.h hashtable.c hashtable.h common.c checker.c listener.c filter.c
-AM_CFLAGS = -W -Wall -Wno-unused-parameter
+ACLOCAL_AMFLAGS = -I m4
+
+SUBDIRS = src
+
+EXTRA_DIST = README LICENSE autogen.sh
+
+MAINTAINERCLEANFILES = Makefile.in aclocal.m4 compile config.h.in config.h.in~ config.guess config.sub configure depcomp install-sh missing

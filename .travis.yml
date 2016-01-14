@@ -1,0 +1,32 @@
+language: c
+
+addons:
+ apt:
+  packages:
+   - libpcap0.8-dev
+
+os:
+  - linux
+  - osx
+
+compiler:
+  - gcc
+  - clang
+
+matrix:
+  exclude:
+    - os: osx
+      compiler: gcc
+  allow_failures:
+    - os: osx
+      compiler: clang
+
+before_install:
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install libpcap ; fi
+
+script:
+  - ./autogen.sh
+  - ./configure
+  - make
+
+sudo: false
