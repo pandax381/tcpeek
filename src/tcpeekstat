@@ -2,45 +2,27 @@
 # coding: utf-8
 import os
 import sys
-import getopt
+import argparse
 import socket
 import json
 
 socket_file = '/var/run/tcpeek/tcpeek.sock'
 gmetric = '/usr/bin/gmetric'
-use_gmetric = 0
+use_gmetric = False
+use_json = False
 
 def init():
-	global use_gmetric, socket_file
-	try:
-		opts, args = getopt.getopt(sys.argv[1:], "U:ghv", ["socket=","gmetric","help", "version"])
-	except getopt.GetoptError:
-		usage()
-		sys.exit(2)
-
-	for o, a in opts:
-		if o in ("-h", "--help"):
-			usage()
-			sys.exit()
-		if o in ("-v", "--version"):
-			version()
-			sys.exit()
-		if o in ("-U", "--socket"):
-			socket_file = a
-		if o in ("-g", "--gmetric"):
-			use_gmetric = 1
-
-def usage():
-	print "usage: tcpeekstat [OPTION]"
-	print "  [OPTION]"
-	print "    -g  --gmetric      # exec gmetric"
-	print "    -U  --socket=path  # unix domain socket (default: /var/run/tcpeek/tcpeek.sock)"
-	print "    -v  --version      # version"
-	print "    -h  --help         # help"
-	sys.exit()
-
-def version():
-	usage()
+	global use_gmetric, use_json, socket_file
+	parser = argparse.ArgumentParser()
+	exgroup = parser.add_mutually_exclusive_group()
+	exgroup.add_argument('-g', '--gmetric', dest='use_gmetric', help='exec gmetric', action='store_true')
+	exgroup.add_argument('-j', '--json', dest='use_json', help='print statistics with json format', action='store_true')
+	parser.add_argument('-U', '--socket', help='unix domain socket for tcpeek (default: %(default)s)', default=socket_file)
+	parser.add_argument('-v', '--version', help='show version', action='version')
+	args = parser.parse_args()
+	socket_file = args.socket
+	use_gmetric = args.use_gmetric
+	use_json = args.use_json
 
 def getstat():
 	msg = str() 
@@ -48,7 +30,7 @@ def getstat():
 	sock.settimeout(3)
 	try:
 		sock.connect(socket_file)
-		if use_gmetric == 1:
+		if use_gmetric:
 			sock.send("REFRESH\r\n")
 		else:
 			sock.send("GET\r\n")
@@ -75,17 +57,20 @@ def exec_gmetric(stat):
 						os.system(cmd)
 
 def print_stat(stat):
-	print "====== TCPEEK SUMMARY ======"
-	for _filter in stat:
-		for name in _filter.keys():
-			print "----------------------------"
-			print " %s" % (name)
-			print "----------------------------"
-			for section in _filter[name].keys():
-				print " %s" % (section)
-				for item in _filter[name][section].keys():
-					print "     %-10s %10s" % (item, _filter[name][section][item])
-	print "============================"
+	if use_json:
+		print json.dumps(stat, separators=(',', ':'))
+	else:
+		print "====== TCPEEK SUMMARY ======"
+		for _filter in stat:
+			for name in _filter.keys():
+				print "----------------------------"
+				print " %s" % (name)
+				print "----------------------------"
+				for section in _filter[name].keys():
+					print " %s" % (section)
+					for item in _filter[name][section].keys():
+						print "     %-10s %10s" % (item, _filter[name][section][item])
+		print "============================"
 
 def main():
 	init()
