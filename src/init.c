@@ -311,9 +311,9 @@ usage(void) {
 	printf("  expression:\n");
 	printf("    filter:dir@addr:port[,port...]\n");
 	printf("  example) '%%' is the same as wildcard '*'\n");
-	printf("    tcpeek -i eth0 filter:IN@%%:80:443\n");
-	printf("    tcpeek -i eth0 filter:OUT@192.168.0.0/24:%%\n");
-	printf("    tcpeek -i eth0 inbound-filter:IN@%%:%% outbound-filter:OUT@192.168.0.100:%%,192.168.0.200:%%\n");
+	printf("    tcpeek -i eth0 filter:RX@%%:80:443\n");
+	printf("    tcpeek -i eth0 filter:TX@192.168.0.0/24:%%\n");
+	printf("    tcpeek -i eth0 inbound-filter:RX@%%:%% outbound-filter:TX@192.168.0.100:%%,192.168.0.200:%%\n");
 }
 
 static void
