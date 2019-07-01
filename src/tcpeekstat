@@ -36,8 +36,6 @@ def getstat():
 			sock.send("GET\r\n")
 		while 1:
 			chunk = sock.recv(1024)
-			if not chunk:
-				raise socket.error("connnection broken")
 			if chunk == '':
 				break
 			msg = msg + chunk
